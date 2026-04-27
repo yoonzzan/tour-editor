@@ -1,0 +1,408 @@
+[
+  {
+    "id": "f001",
+    "airline": "대한항공",
+    "fareType": "GROUP",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "대한항공",
+      "flightNo": "KE643",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "14:45",
+      "arrTime": "19:30"
+    },
+    "inbound": {
+      "airline": "대한항공",
+      "flightNo": "KE646",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "01:10",
+      "arrTime": "08:35"
+    },
+    "fareAdult": 820000,
+    "fuelSurcharge": 165000,
+    "tax": 102000,
+    "total": 1087000
+  },
+  {
+    "id": "f002",
+    "airline": "아시아나항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ751",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "09:20",
+      "arrTime": "14:05"
+    },
+    "fareAdult": 420000,
+    "fuelSurcharge": 82000,
+    "tax": 50000,
+    "total": 552000
+  },
+  {
+    "id": "f003",
+    "airline": "싱가포르항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "싱가포르항공",
+      "flightNo": "SQ601",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "23:55",
+      "arrTime": "05:40"
+    },
+    "inbound": {
+      "airline": "싱가포르항공",
+      "flightNo": "SQ606",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "14:35",
+      "arrTime": "22:05"
+    },
+    "fareAdult": 760000,
+    "fuelSurcharge": 178000,
+    "tax": 110000,
+    "total": 1048000
+  },
+  {
+    "id": "f004",
+    "airline": "제주항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "제주항공",
+      "flightNo": "7C2401",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "07:30",
+      "arrTime": "12:15"
+    },
+    "fareAdult": 310000,
+    "fuelSurcharge": 75000,
+    "tax": 48000,
+    "total": 433000
+  },
+  {
+    "id": "f006",
+    "airline": "아시아나항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ752",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "23:10",
+      "arrTime": "06:45"
+    },
+    "fareAdult": 430000,
+    "fuelSurcharge": 82000,
+    "tax": 51000,
+    "total": 563000
+  },
+  {
+    "id": "f007",
+    "airline": "제주항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "제주항공",
+      "flightNo": "7C2402",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "13:20",
+      "arrTime": "20:55"
+    },
+    "fareAdult": 325000,
+    "fuelSurcharge": 76000,
+    "tax": 49000,
+    "total": 450000
+  },
+  {
+    "id": "f005",
+    "airline": "타이항공",
+    "fareType": "GROUP",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "타이항공",
+      "flightNo": "TG658",
+      "depAirport": "ICN",
+      "arrAirport": "BKK",
+      "depTime": "18:10",
+      "arrTime": "23:50"
+    },
+    "inbound": {
+      "airline": "타이항공",
+      "flightNo": "TG657",
+      "depAirport": "BKK",
+      "arrAirport": "ICN",
+      "depTime": "23:10",
+      "arrTime": "06:35"
+    },
+    "fareAdult": 690000,
+    "fuelSurcharge": 154000,
+    "tax": 97000,
+    "total": 941000
+  },
+  {
+    "id": "f008",
+    "airline": "대한항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "대한항공",
+      "flightNo": "KE645",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "18:40",
+      "arrTime": "00:10"
+    },
+    "inbound": {
+      "airline": "대한항공",
+      "flightNo": "KE648",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "10:50",
+      "arrTime": "18:20"
+    },
+    "fareAdult": 790000,
+    "fuelSurcharge": 166000,
+    "tax": 104000,
+    "total": 1060000
+  },
+  {
+    "id": "f009",
+    "airline": "아시아나항공",
+    "fareType": "GROUP",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ751",
+      "depAirport": "ICN",
+      "arrAirport": "SIN",
+      "depTime": "09:20",
+      "arrTime": "14:05"
+    },
+    "inbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ752",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "23:10",
+      "arrTime": "06:45"
+    },
+    "fareAdult": 805000,
+    "fuelSurcharge": 164000,
+    "tax": 101000,
+    "total": 1070000
+  },
+  {
+    "id": "f010",
+    "airline": "싱가포르항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "싱가포르항공",
+      "flightNo": "SQ607",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "08:00",
+      "arrTime": "15:35"
+    },
+    "fareAdult": 515000,
+    "fuelSurcharge": 90000,
+    "tax": 56000,
+    "total": 661000
+  },
+  {
+    "id": "f011",
+    "airline": "대한항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "대한항공",
+      "flightNo": "KE646",
+      "depAirport": "SIN",
+      "arrAirport": "ICN",
+      "depTime": "01:10",
+      "arrTime": "08:35"
+    },
+    "fareAdult": 470000,
+    "fuelSurcharge": 85000,
+    "tax": 52000,
+    "total": 607000
+  },
+  {
+    "id": "f012",
+    "airline": "대한항공",
+    "fareType": "GROUP",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "대한항공",
+      "flightNo": "KE703",
+      "depAirport": "ICN",
+      "arrAirport": "NRT",
+      "depTime": "10:10",
+      "arrTime": "12:40"
+    },
+    "inbound": {
+      "airline": "대한항공",
+      "flightNo": "KE704",
+      "depAirport": "NRT",
+      "arrAirport": "ICN",
+      "depTime": "13:55",
+      "arrTime": "16:30"
+    },
+    "fareAdult": 430000,
+    "fuelSurcharge": 72000,
+    "tax": 47000,
+    "total": 549000
+  },
+  {
+    "id": "f013",
+    "airline": "아시아나항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ102",
+      "depAirport": "ICN",
+      "arrAirport": "NRT",
+      "depTime": "09:00",
+      "arrTime": "11:20"
+    },
+    "inbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ105",
+      "depAirport": "NRT",
+      "arrAirport": "ICN",
+      "depTime": "18:50",
+      "arrTime": "21:30"
+    },
+    "fareAdult": 390000,
+    "fuelSurcharge": 70000,
+    "tax": 45000,
+    "total": 505000
+  },
+  {
+    "id": "f014",
+    "airline": "진에어",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "진에어",
+      "flightNo": "LJ205",
+      "depAirport": "ICN",
+      "arrAirport": "NRT",
+      "depTime": "07:25",
+      "arrTime": "09:55"
+    },
+    "fareAdult": 185000,
+    "fuelSurcharge": 62000,
+    "tax": 41000,
+    "total": 288000
+  },
+  {
+    "id": "f015",
+    "airline": "진에어",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "진에어",
+      "flightNo": "LJ206",
+      "depAirport": "NRT",
+      "arrAirport": "ICN",
+      "depTime": "10:45",
+      "arrTime": "13:35"
+    },
+    "fareAdult": 190000,
+    "fuelSurcharge": 62000,
+    "tax": 42000,
+    "total": 294000
+  },
+  {
+    "id": "f016",
+    "airline": "타이항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ROUND_TRIP",
+    "outbound": {
+      "airline": "타이항공",
+      "flightNo": "TG659",
+      "depAirport": "ICN",
+      "arrAirport": "BKK",
+      "depTime": "09:35",
+      "arrTime": "13:25"
+    },
+    "inbound": {
+      "airline": "타이항공",
+      "flightNo": "TG656",
+      "depAirport": "BKK",
+      "arrAirport": "ICN",
+      "depTime": "23:30",
+      "arrTime": "06:55"
+    },
+    "fareAdult": 650000,
+    "fuelSurcharge": 150000,
+    "tax": 96000,
+    "total": 896000
+  },
+  {
+    "id": "f017",
+    "airline": "아시아나항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ741",
+      "depAirport": "ICN",
+      "arrAirport": "BKK",
+      "depTime": "18:05",
+      "arrTime": "22:10"
+    },
+    "fareAdult": 340000,
+    "fuelSurcharge": 76000,
+    "tax": 50000,
+    "total": 466000
+  },
+  {
+    "id": "f018",
+    "airline": "아시아나항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "아시아나항공",
+      "flightNo": "OZ742",
+      "depAirport": "BKK",
+      "arrAirport": "ICN",
+      "depTime": "23:55",
+      "arrTime": "07:10"
+    },
+    "fareAdult": 350000,
+    "fuelSurcharge": 76000,
+    "tax": 51000,
+    "total": 477000
+  },
+  {
+    "id": "f019",
+    "airline": "제주항공",
+    "fareType": "INDIVIDUAL",
+    "tripType": "ONE_WAY",
+    "outbound": {
+      "airline": "제주항공",
+      "flightNo": "7C2201",
+      "depAirport": "ICN",
+      "arrAirport": "BKK",
+      "depTime": "20:40",
+      "arrTime": "00:35"
+    },
+    "fareAdult": 265000,
+    "fuelSurcharge": 72000,
+    "tax": 48000,
+    "total": 385000
+  }
+]

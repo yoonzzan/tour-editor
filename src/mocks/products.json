@@ -1,0 +1,639 @@
+[
+  {
+    "code": "TOUR001",
+    "name": "싱가포르 자유+패키지 5일",
+    "itinerary": {
+      "header": {
+        "groupName": "",
+        "writtenAt": ""
+      },
+      "overview": {
+        "recipient": "",
+        "cities": "싱가포르",
+        "travelPeriod": { "start": "", "end": "" },
+        "passengers": { "adult": 2, "child": 0, "infant": 0, "escort": 0 },
+        "fare": {
+          "adultPerPerson": 0,
+          "childPerPerson": 0,
+          "infantPerPerson": 0,
+          "total": 0,
+          "totalWithCard": 0
+        }
+      },
+      "basics": {
+        "flight": {
+          "departure": "인천 → 싱가포르 (SQ 601)",
+          "arrival": "싱가포르 → 인천 (SQ 602)",
+          "localVehicle": "전용 버스"
+        },
+        "accommodation": {
+          "hotel": "마리나베이샌즈 또는 동급",
+          "grade": "5성급",
+          "occupancy": "2인 1실"
+        },
+        "included": "왕복 항공권, 호텔 숙박(4박), 조식 포함, 전용 차량, 한국어 가이드",
+        "excluded": "여행자 보험, 개인 경비, 선택 관광",
+        "optionalTour": "유니버셜 스튜디오 (1인 120,000원), 나이트 사파리 (1인 90,000원)",
+        "shoppingCenters": 2,
+        "notes": "항공 스케줄 변동 시 현지 일정이 조정될 수 있습니다."
+      },
+      "days": [
+        {
+          "dayNo": 1,
+          "date": "",
+          "items": [
+            {
+              "id": "d1-001",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "10:30",
+              "content": "인천국제공항 출발 (SQ 601)"
+            },
+            {
+              "id": "d1-002",
+              "type": "TRANSFER",
+              "region": "싱가포르",
+              "transport": "항공",
+              "time": "16:00",
+              "content": "싱가포르 창이공항 도착 → 호텔 이동"
+            },
+            {
+              "id": "d1-003",
+              "type": "ACCOMMODATION",
+              "region": "싱가포르",
+              "content": "마리나베이샌즈 체크인",
+              "hotel": "마리나베이샌즈"
+            }
+          ]
+        },
+        {
+          "dayNo": 2,
+          "date": "",
+          "items": [
+            {
+              "id": "d2-001",
+              "type": "MEAL",
+              "region": "싱가포르",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d2-002",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "센토사섬 관광 (케이블카 포함)"
+            },
+            {
+              "id": "d2-003",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "유니버셜 스튜디오 (선택 관광)"
+            },
+            {
+              "id": "d2-004",
+              "type": "MEAL",
+              "region": "싱가포르",
+              "content": "칠리크랩 석식",
+              "meal": { "dinner": "현지식" }
+            },
+            {
+              "id": "d2-005",
+              "type": "ACCOMMODATION",
+              "region": "싱가포르",
+              "content": "마리나베이샌즈 숙박",
+              "hotel": "마리나베이샌즈"
+            }
+          ]
+        },
+        {
+          "dayNo": 3,
+          "date": "",
+          "items": [
+            {
+              "id": "d3-001",
+              "type": "MEAL",
+              "region": "싱가포르",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d3-002",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "가든스 바이 더 베이 관광"
+            },
+            {
+              "id": "d3-003",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "국립식물원 산책"
+            },
+            {
+              "id": "d3-004",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "오차드로드 쇼핑"
+            },
+            {
+              "id": "d3-005",
+              "type": "ACCOMMODATION",
+              "region": "싱가포르",
+              "content": "마리나베이샌즈 숙박",
+              "hotel": "마리나베이샌즈"
+            }
+          ]
+        },
+        {
+          "dayNo": 4,
+          "date": "",
+          "items": [
+            {
+              "id": "d4-001",
+              "type": "MEAL",
+              "region": "싱가포르",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d4-002",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "차이나타운 · 리틀인디아 자유 관광"
+            },
+            {
+              "id": "d4-003",
+              "type": "SIGHTSEEING",
+              "region": "싱가포르",
+              "content": "마리나베이 스카이파크 전망대"
+            },
+            {
+              "id": "d4-004",
+              "type": "ACCOMMODATION",
+              "region": "싱가포르",
+              "content": "마리나베이샌즈 숙박",
+              "hotel": "마리나베이샌즈"
+            }
+          ]
+        },
+        {
+          "dayNo": 5,
+          "date": "",
+          "items": [
+            {
+              "id": "d5-001",
+              "type": "MEAL",
+              "region": "싱가포르",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d5-002",
+              "type": "TRANSFER",
+              "region": "싱가포르",
+              "transport": "전용버스",
+              "time": "09:00",
+              "content": "창이공항 이동"
+            },
+            {
+              "id": "d5-003",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "18:30",
+              "content": "인천국제공항 도착"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "code": "TOUR002",
+    "name": "방콕·파타야 패키지 6일",
+    "itinerary": {
+      "header": {
+        "groupName": "",
+        "writtenAt": ""
+      },
+      "overview": {
+        "recipient": "",
+        "cities": "방콕, 파타야",
+        "travelPeriod": { "start": "", "end": "" },
+        "passengers": { "adult": 2, "child": 0, "infant": 0, "escort": 0 },
+        "fare": {
+          "adultPerPerson": 0,
+          "childPerPerson": 0,
+          "infantPerPerson": 0,
+          "total": 0,
+          "totalWithCard": 0
+        }
+      },
+      "basics": {
+        "flight": {
+          "departure": "인천 → 방콕 (TG 659)",
+          "arrival": "방콕 → 인천 (TG 658)",
+          "localVehicle": "전용 버스"
+        },
+        "accommodation": {
+          "hotel": "방콕 4성급 / 파타야 4성급",
+          "grade": "4성급",
+          "occupancy": "2인 1실"
+        },
+        "included": "왕복 항공권, 호텔 숙박(5박), 조식 포함, 전용 차량, 한국어 가이드",
+        "excluded": "여행자 보험, 개인 경비, 팁",
+        "optionalTour": "알카자쇼 (1인 55,000원), 코끼리 트레킹 (1인 60,000원)",
+        "shoppingCenters": 3,
+        "notes": "현지 사정에 따라 일정이 변경될 수 있습니다."
+      },
+      "days": [
+        {
+          "dayNo": 1,
+          "date": "",
+          "items": [
+            {
+              "id": "d1-001",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "09:00",
+              "content": "인천국제공항 출발 (TG 659)"
+            },
+            {
+              "id": "d1-002",
+              "type": "TRANSFER",
+              "region": "방콕",
+              "transport": "항공",
+              "time": "13:30",
+              "content": "수완나품 국제공항 도착 → 파타야 이동"
+            },
+            {
+              "id": "d1-003",
+              "type": "ACCOMMODATION",
+              "region": "파타야",
+              "content": "파타야 호텔 체크인",
+              "hotel": "Amari Pattaya"
+            }
+          ]
+        },
+        {
+          "dayNo": 2,
+          "date": "",
+          "items": [
+            {
+              "id": "d2-001",
+              "type": "MEAL",
+              "region": "파타야",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d2-002",
+              "type": "SIGHTSEEING",
+              "region": "파타야",
+              "content": "산호섬 스피드보트 투어"
+            },
+            {
+              "id": "d2-003",
+              "type": "SIGHTSEEING",
+              "region": "파타야",
+              "content": "알카자쇼 관람 (선택 관광)"
+            },
+            {
+              "id": "d2-004",
+              "type": "ACCOMMODATION",
+              "region": "파타야",
+              "content": "파타야 호텔 숙박",
+              "hotel": "Amari Pattaya"
+            }
+          ]
+        },
+        {
+          "dayNo": 3,
+          "date": "",
+          "items": [
+            {
+              "id": "d3-001",
+              "type": "MEAL",
+              "region": "파타야",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d3-002",
+              "type": "TRANSFER",
+              "region": "파타야→방콕",
+              "transport": "전용버스",
+              "time": "09:00",
+              "content": "방콕으로 이동 (약 2시간)"
+            },
+            {
+              "id": "d3-003",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "왕궁 · 에메랄드 사원 관광"
+            },
+            {
+              "id": "d3-004",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "왓포 와불 사원 관광"
+            },
+            {
+              "id": "d3-005",
+              "type": "ACCOMMODATION",
+              "region": "방콕",
+              "content": "방콕 호텔 체크인",
+              "hotel": "Centara Grand"
+            }
+          ]
+        },
+        {
+          "dayNo": 4,
+          "date": "",
+          "items": [
+            {
+              "id": "d4-001",
+              "type": "MEAL",
+              "region": "방콕",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d4-002",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "수상시장 관광 (담넌사두억)"
+            },
+            {
+              "id": "d4-003",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "짜뚜짝 주말시장 쇼핑"
+            },
+            {
+              "id": "d4-004",
+              "type": "ACCOMMODATION",
+              "region": "방콕",
+              "content": "방콕 호텔 숙박",
+              "hotel": "Centara Grand"
+            }
+          ]
+        },
+        {
+          "dayNo": 5,
+          "date": "",
+          "items": [
+            {
+              "id": "d5-001",
+              "type": "MEAL",
+              "region": "방콕",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d5-002",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "아이콘시암 쇼핑몰"
+            },
+            {
+              "id": "d5-003",
+              "type": "SIGHTSEEING",
+              "region": "방콕",
+              "content": "루프탑 바 저녁 (선택)"
+            },
+            {
+              "id": "d5-004",
+              "type": "ACCOMMODATION",
+              "region": "방콕",
+              "content": "방콕 호텔 숙박",
+              "hotel": "Centara Grand"
+            }
+          ]
+        },
+        {
+          "dayNo": 6,
+          "date": "",
+          "items": [
+            {
+              "id": "d6-001",
+              "type": "MEAL",
+              "region": "방콕",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d6-002",
+              "type": "TRANSFER",
+              "region": "방콕",
+              "transport": "전용버스",
+              "time": "10:00",
+              "content": "수완나품 국제공항 이동"
+            },
+            {
+              "id": "d6-003",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "23:00",
+              "content": "인천국제공항 도착"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "code": "TOUR003",
+    "name": "도쿄·후지산 패키지 4일",
+    "itinerary": {
+      "header": {
+        "groupName": "",
+        "writtenAt": ""
+      },
+      "overview": {
+        "recipient": "",
+        "cities": "도쿄, 후지산",
+        "travelPeriod": { "start": "", "end": "" },
+        "passengers": { "adult": 2, "child": 0, "infant": 0, "escort": 0 },
+        "fare": {
+          "adultPerPerson": 0,
+          "childPerPerson": 0,
+          "infantPerPerson": 0,
+          "total": 0,
+          "totalWithCard": 0
+        }
+      },
+      "basics": {
+        "flight": {
+          "departure": "인천 → 도쿄 나리타 (KE 705)",
+          "arrival": "도쿄 하네다 → 인천 (KE 712)",
+          "localVehicle": "전용 버스"
+        },
+        "accommodation": {
+          "hotel": "도쿄 4성급 / 후지산 료칸",
+          "grade": "4성급/료칸",
+          "occupancy": "2인 1실"
+        },
+        "included": "왕복 항공권, 호텔·료칸 숙박(3박), 조식 포함, 전용 차량, 한국어 가이드",
+        "excluded": "여행자 보험, 개인 경비, 선택 관광",
+        "optionalTour": "디즈니랜드 (1인 110,000원), 스카이트리 전망대 (1인 35,000원)",
+        "shoppingCenters": 2,
+        "notes": "후지산 5합목은 날씨에 따라 입산이 제한될 수 있습니다."
+      },
+      "days": [
+        {
+          "dayNo": 1,
+          "date": "",
+          "items": [
+            {
+              "id": "d1-001",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "08:00",
+              "content": "인천국제공항 출발 (KE 705)"
+            },
+            {
+              "id": "d1-002",
+              "type": "TRANSFER",
+              "region": "도쿄",
+              "transport": "항공",
+              "time": "10:30",
+              "content": "나리타 국제공항 도착 → 도쿄 이동"
+            },
+            {
+              "id": "d1-003",
+              "type": "SIGHTSEEING",
+              "region": "도쿄",
+              "content": "아사쿠사 · 나카미세 거리 관광"
+            },
+            {
+              "id": "d1-004",
+              "type": "SIGHTSEEING",
+              "region": "도쿄",
+              "content": "스카이트리 전망대 (선택 관광)"
+            },
+            {
+              "id": "d1-005",
+              "type": "ACCOMMODATION",
+              "region": "도쿄",
+              "content": "도쿄 호텔 체크인",
+              "hotel": "Shinjuku Washington Hotel"
+            }
+          ]
+        },
+        {
+          "dayNo": 2,
+          "date": "",
+          "items": [
+            {
+              "id": "d2-001",
+              "type": "MEAL",
+              "region": "도쿄",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d2-002",
+              "type": "TRANSFER",
+              "region": "도쿄→후지산",
+              "transport": "전용버스",
+              "time": "08:30",
+              "content": "후지산 방면 이동 (약 2시간)"
+            },
+            {
+              "id": "d2-003",
+              "type": "SIGHTSEEING",
+              "region": "후지산",
+              "content": "후지산 5합목 관광"
+            },
+            {
+              "id": "d2-004",
+              "type": "SIGHTSEEING",
+              "region": "후지산",
+              "content": "하코네 아시노코 유람선"
+            },
+            {
+              "id": "d2-005",
+              "type": "ACCOMMODATION",
+              "region": "후지산",
+              "content": "후지산 료칸 숙박 (가이세키 석식 포함)",
+              "hotel": "후지뷰 호텔 료칸"
+            }
+          ]
+        },
+        {
+          "dayNo": 3,
+          "date": "",
+          "items": [
+            {
+              "id": "d3-001",
+              "type": "MEAL",
+              "region": "후지산",
+              "content": "료칸 조식",
+              "meal": { "breakfast": "료칸식" }
+            },
+            {
+              "id": "d3-002",
+              "type": "TRANSFER",
+              "region": "후지산→도쿄",
+              "transport": "전용버스",
+              "time": "09:00",
+              "content": "도쿄로 귀환 (약 2시간)"
+            },
+            {
+              "id": "d3-003",
+              "type": "SIGHTSEEING",
+              "region": "도쿄",
+              "content": "시부야 스크램블 교차로 · 하라주쿠"
+            },
+            {
+              "id": "d3-004",
+              "type": "SIGHTSEEING",
+              "region": "도쿄",
+              "content": "긴자 쇼핑"
+            },
+            {
+              "id": "d3-005",
+              "type": "ACCOMMODATION",
+              "region": "도쿄",
+              "content": "도쿄 호텔 숙박",
+              "hotel": "Shinjuku Washington Hotel"
+            }
+          ]
+        },
+        {
+          "dayNo": 4,
+          "date": "",
+          "items": [
+            {
+              "id": "d4-001",
+              "type": "MEAL",
+              "region": "도쿄",
+              "content": "호텔 조식",
+              "meal": { "breakfast": "호텔식" }
+            },
+            {
+              "id": "d4-002",
+              "type": "TRANSFER",
+              "region": "도쿄",
+              "transport": "전용버스",
+              "time": "10:00",
+              "content": "하네다 국제공항 이동"
+            },
+            {
+              "id": "d4-003",
+              "type": "TRANSFER",
+              "region": "인천",
+              "transport": "항공",
+              "time": "17:00",
+              "content": "인천국제공항 도착"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

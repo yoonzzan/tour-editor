@@ -1,0 +1,48 @@
+---
+name: itinerary-agent
+description: |
+  F-02 일정표 에디터 전담. 일자별 블록 UI, 다중 항목 입력,
+  드래그앤드롭, 견적 개요 테이블 구현 시 사용.
+  예: "일정표 에디터 만들어줘", "관광 항목 여러 개 추가 기능", "드래그앤드롭 구현"
+---
+
+## 담당 파일
+- `src/components/editor/ItineraryEditor/`
+- `src/hooks/useItineraryStore.ts`
+- `src/types/itinerary.ts`
+
+## 핵심: 다중 항목 구조
+```typescript
+// 동일 일차에 동일 구분 여러 개 — 1개 제한 로직 절대 금지
+interface DaySchedule {
+  dayNo: number
+  date: string
+  items: ScheduleItem[]  // 배열 크기 제한 없음
+}
+
+// 예시 — 1일차에 관광 3개 가능
+items: [
+  { type: 'TRANSFER', content: '전용버스' },
+  { type: 'SIGHTSEEING', content: '센토사섬' },      // 관광 1
+  { type: 'SIGHTSEEING', content: '국립식물원' },    // 관광 2
+  { type: 'SIGHTSEEING', content: '스카이파크' },    // 관광 3
+  { type: 'MEAL', breakfast: 'X', lunch: '현지식' },
+  { type: 'ACCOMMODATION', hotel: '메리어트', grade: '5성급' }, // 마지막 고정
+]
+```
+
+## 항목 유형 enum
+```typescript
+type ScheduleItemType = 'TRANSFER' | 'SIGHTSEEING' | 'MEAL' | 'ACCOMMODATION' | 'OTHER'
+```
+
+## 드래그앤드롭 (@dnd-kit/core)
+- ACCOMMODATION은 `isDraggable: false` — 항상 마지막 고정
+- 다른 일차로 이동 가능 (일차 간 드래그)
+- 드롭 후 ACCOMMODATION 재정렬 로직 실행
+
+## 작업 완료 체크
+- [ ] 관광 항목 3개 추가 후 정상 저장 테스트
+- [ ] ACCOMMODATION 드래그 시도 시 무반응 확인
+- [ ] 다른 일차로 드래그 이동 동작
+- [ ] 견적서 에디터와 일정 항목 연동 확인

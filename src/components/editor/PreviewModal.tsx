@@ -1,0 +1,801 @@
+"use client";
+
+// T-410: 미리보기 모달 (일정표 탭 + 견적서 탭)
+
+import { useState, Fragment } from "react";
+import Image from "next/image";
+import { useEditorStore } from "@/hooks/useEditorStore";
+import type { ItineraryData, QuoteCategory, QuoteData } from "@/types";
+import { buildItineraryDisplayDays } from "@/lib/itinerary/itineraryDisplay";
+import { formatDateDotInKorea, formatDateKorInKorea, todayInKorea } from "@/lib/date/korea";
+import {
+  calculateItemSubtotalKrw,
+  getExchangeRateForItem,
+  getQuoteExchangeRates,
+} from "@/lib/quote/currency";
+
+const PREVIEW_STYLE = {
+  brand: "#5E27A5",
+  mutedBg: "#F3E8FF",
+  categoryBg: "#FFF3E8FF",
+  detailBg: "#FFF9FAFB",
+  border: "#D1D5DB",
+};
+
+const PREVIEW_DOCUMENT_CLASS = "mx-auto max-w-6xl space-y-6 px-6 py-6";
+const PREVIEW_WIDE_TABLE_CLASS = "min-w-[1080px] w-full table-fixed text-xs";
+
+type PreviewTab = "itinerary" | "quote";
+
+interface Props {
+  onClose: () => void;
+  quoteId: string | null;
+}
+
+export function PreviewModal({ onClose, quoteId }: Props) {
+  const [activeTab, setActiveTab] = useState<PreviewTab>("itinerary");
+  const { itinerary, quote } = useEditorStore();
+
+  async function handleDownload(type: "itinerary" | "cost") {
+    if (!quoteId) return;
+
+    if (type === "itinerary" && !itinerary) return;
+    if (type === "cost" && !quote) return;
+
+    const payload =
+      type === "itinerary" ? { itineraryData: itinerary } : { quoteData: quote };
+
+    const response = await fetch(`/api/quotes/${quoteId}/export?type=${type}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      window.alert(
+        `엑셀 다운로드에 실패했습니다: ${response.status} ${response.statusText}${
+          body ? `\n${body}` : ""
+        }`
+      );
+      return;
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const fallbackMatch = /filename=\"([^\"]+)\"/i.exec(disposition);
+    const filename = filenameMatch
+      ? decodeURIComponent(filenameMatch[1])
+      : fallbackMatch
+        ? fallbackMatch[1]
+        : "export.xlsx";
+
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex h-[90vh] w-[94vw] max-w-7xl flex-col rounded-xl bg-background shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
+          <span className="text-sm font-semibold text-foreground">미리보기</span>
+
+          <div className="flex gap-1 rounded-md bg-muted p-0.5">
+            <TabButton
+              active={activeTab === "itinerary"}
+              onClick={() => setActiveTab("itinerary")}
+              label="일정표"
+            />
+            <TabButton
+              active={activeTab === "quote"}
+              onClick={() => setActiveTab("quote")}
+              label="견적서"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {quoteId && (
+              <>
+                <button
+                  onClick={() => handleDownload("itinerary")}
+                  className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  일정표 Excel
+                </button>
+                <button
+                  onClick={() => handleDownload("cost")}
+                  className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  견적서 Excel
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              aria-label="미리보기 닫기"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {activeTab === "itinerary" ? (
+            <ItineraryPreview itinerary={itinerary} />
+          ) : (
+            <QuotePreview quote={quote} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 탭 버튼 ─────────────────────────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function formatDateDot(input: string): string {
+  return formatDateDotInKorea(input);
+}
+
+function formatDateKor(input: string): string {
+  return formatDateKorInKorea(input);
+}
+
+function getTodayDateString(): string {
+  return todayInKorea();
+}
+
+function formatMoney(value: number): string {
+  return `₩ ${value.toLocaleString("ko-KR")}`;
+}
+
+function formatPassenger(data: ItineraryData["overview"]["passengers"]): string {
+  return `성인 ${data.adult}, 아동 ${data.child}, 유아 ${data.infant}`;
+}
+
+function PreviewDocumentHeader({
+  title,
+}: {
+  title: string;
+}) {
+  const today = getTodayDateString();
+
+  return (
+    <section className="overflow-hidden bg-white">
+      <div className="grid grid-cols-[150px_1fr_180px] items-center">
+        <div className="flex h-16 items-center justify-center p-2">
+          <Image
+            src="/images/hanatour-logo-cropped.png"
+            alt="하나투어"
+            width={120}
+            height={27}
+            className="h-[27px] w-auto object-contain"
+          />
+        </div>
+        <div className="px-3 py-2 text-center text-lg font-bold text-foreground">
+          {title}
+        </div>
+        <div className="px-3 py-2 text-right text-[11px] text-foreground/80">
+          견적 작성일: {formatDateDot(today)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function buildItinerarySummaryRows(data: ItineraryData): Array<[string, string, string]> {
+  const accommodationHotel = data.basics.accommodation?.hotel ?? "";
+  const accommodationGrade = data.basics.accommodation?.grade ?? "";
+  const accommodationOccupancy = data.basics.accommodation?.occupancy ?? "";
+  const summaryNotes = data.basics.summaryNotes;
+  return [
+    [
+      "항공",
+      `[출발] ${data.basics.flight.departure}\n[귀국] ${data.basics.flight.arrival}`,
+      summaryNotes?.flight ?? "",
+    ],
+    [
+      "차량",
+      data.basics.flight.localVehicle,
+      summaryNotes?.vehicle ?? "",
+    ],
+    [
+      "숙박",
+      `[호텔] ${accommodationHotel}\n[등급] ${accommodationGrade}\n[1객실 이용인원] ${accommodationOccupancy}`,
+      summaryNotes?.accommodation ?? "",
+    ],
+    ["포함사항", data.basics.included, summaryNotes?.included ?? ""],
+    ["불포함사항", data.basics.excluded, summaryNotes?.excluded ?? ""],
+    ["선택관광", data.basics.optionalTour, summaryNotes?.optionalTour ?? ""],
+    ["쇼핑센터", `${data.basics.shoppingCenters}회`, summaryNotes?.shoppingCenters ?? ""],
+  ];
+}
+
+// ── 일정표 미리보기 ───────────────────────────────────────
+
+function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
+  if (!itinerary) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">일정 데이터가 없습니다.</p>
+      </div>
+    );
+  }
+
+  const { overview, basics, days } = itinerary;
+  const pax = overview.passengers;
+  const blocks = buildItineraryDisplayDays(days);
+  const summaryRows = buildItinerarySummaryRows(itinerary);
+  const travelPeriod = `${formatDateDot(overview.travelPeriod.start)} ~ ${formatDateDot(overview.travelPeriod.end)}`;
+  const occupancy = basics.accommodation?.occupancy?.trim() || "";
+  const fareAdult = formatMoney(overview.fare.adultPerPerson);
+  const fareChild = overview.fare.childPerPerson > 0 ? formatMoney(overview.fare.childPerPerson) : "";
+  const fareInfant = overview.fare.infantPerPerson > 0 ? formatMoney(overview.fare.infantPerPerson) : "";
+  const fareTotal = formatMoney(overview.fare.total);
+  const fareWithCard = formatMoney(overview.fare.totalWithCard);
+
+  return (
+      <div className={`${PREVIEW_DOCUMENT_CLASS} text-sm`}>
+      <PreviewDocumentHeader
+        title={itinerary.header.groupName || overview.cities || "일정표"}
+      />
+
+      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB] text-[11px]">
+        <table className={`${PREVIEW_WIDE_TABLE_CLASS} border-collapse`}>
+          <colgroup>
+            <col className="w-[9%]" />
+            <col className="w-[10.5%]" />
+            <col className="w-[10.5%]" />
+            <col className="w-[10.5%]" />
+            <col className="w-[9%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[8.5%]" />
+            <col className="w-[8.5%]" />
+            <col className="w-[8.5%]" />
+          </colgroup>
+          <tbody>
+            <tr>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                수신
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={3}>
+                {overview.recipient}
+              </td>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                여행도시
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+                {overview.cities}
+              </td>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                여행기간
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+                {travelPeriod}
+              </td>
+            </tr>
+            <tr>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                인원
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={3}>
+                {formatPassenger(pax)}
+              </td>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                인솔자
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>{pax.escort}명</td>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                1인실 이용금액
+              </th>
+              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+                {occupancy}
+              </td>
+            </tr>
+            <tr>
+              <th
+                className="whitespace-nowrap border border-[#D1D5DB] border-l-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white"
+                rowSpan={2}
+              >
+                여행 요금
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                성인 인당
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                아동 인당
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                유아 인당
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={3}>
+                총 금액
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={3}>
+                카드 결제 시 금액
+              </th>
+            </tr>
+            <tr>
+              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareAdult}</td>
+              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareChild}</td>
+              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareInfant}</td>
+              <td className="border border-[#D1D5DB] px-2 py-1 text-right" colSpan={3}>
+                {fareTotal}
+              </td>
+              <td className="border border-[#D1D5DB] border-r-0 px-2 py-1 text-right" colSpan={3}>
+                {fareWithCard}
+              </td>
+            </tr>
+            <tr>
+              <td
+                className="h-[6px] border border-[#D1D5DB] border-l-0 border-r-0 bg-white px-0 py-0"
+                colSpan={10}
+              />
+            </tr>
+            <tr>
+              <th className="whitespace-nowrap border border-[#D1D5DB] border-l-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+                구분
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={7}>
+                내용
+              </th>
+              <th className="whitespace-nowrap border border-[#D1D5DB] border-r-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={2}>
+                비고
+              </th>
+            </tr>
+            {summaryRows.map(([label, detail, note]) => (
+              <tr key={label}>
+                <td className="border border-[#D1D5DB] bg-[#F3E8FF] px-2 py-1 text-center align-top font-medium">
+                  {label}
+                </td>
+                <td className="border border-[#D1D5DB] px-2 py-1" colSpan={7}>
+                  <div className="whitespace-pre-wrap">{detail || ""}</div>
+                </td>
+                <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+                  {note || ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB]">
+        <table className={PREVIEW_WIDE_TABLE_CLASS}>
+          <colgroup>
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[43%]" />
+            <col className="w-[14%]" />
+          </colgroup>
+          <thead style={{ backgroundColor: PREVIEW_STYLE.brand }} className="whitespace-nowrap text-white">
+            <tr>
+              <th className="px-3 py-2 text-center">일자</th>
+              <th className="px-3 py-2 text-center">지역</th>
+              <th className="px-3 py-2 text-center">교통편</th>
+              <th className="px-3 py-2 text-center">시간</th>
+              <th className="px-3 py-2 text-center">세부일정</th>
+              <th className="px-3 py-2 text-center">식사</th>
+            </tr>
+          </thead>
+          <tbody>
+            {blocks.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-3 text-center text-muted-foreground">
+                  일정 없음
+                </td>
+              </tr>
+            ) : (
+              blocks.flatMap((day) => {
+                const dayRowSpan = day.rows.length;
+                const hasMeal = day.mealText.trim().length > 0;
+
+                return day.rows.map((row, rowIndex) => {
+                  const isFirst = rowIndex === 0;
+                  return (
+                    <tr key={`${row.id}-${rowIndex}`} className="border-t border-[#D1D5DB]">
+                    {isFirst ? (
+                        <td
+                          rowSpan={dayRowSpan}
+                          className="whitespace-pre-wrap border-r border-[#D1D5DB] px-3 py-2 align-middle text-center text-foreground bg-white"
+                        >
+                          <div className="whitespace-nowrap">
+                            <span className="font-medium">{day.dayLabel.split("\n")[0]}</span>
+                            <br />
+                            {day.dayLabel.split("\n")[1]}
+                            <br />
+                            <span>{day.dayLabel.split("\n")[2]}</span>
+                          </div>
+                        </td>
+                      ) : null}
+                      <td className="whitespace-nowrap px-3 py-2 text-center text-foreground">{row.region}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center text-foreground">{row.transport}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center text-foreground">{row.time}</td>
+                      <td
+                        className={`px-3 py-2 text-foreground ${
+                          row.isHotel ? "bg-[#FFF9FAFB]" : "bg-white"
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap">
+                          {renderDetailText(row.detail || "", row.detailDescription, row.isHotel)}
+                        </div>
+                      </td>
+                      {isFirst ? (
+                        <td
+                          rowSpan={hasMeal ? dayRowSpan : 1}
+                          className="align-middle border-l border-[#D1D5DB] bg-white px-3 py-2 text-foreground"
+                        >
+                          <div className="whitespace-pre-wrap">
+                            {hasMeal ? renderMealText(day.mealText) : renderMealText(row.meal || "")}
+                          </div>
+                        </td>
+                      ) : hasMeal ? null : (
+                        <td className="border-l border-[#D1D5DB] bg-white px-3 py-2 text-foreground">
+                          {row.meal ? renderMealText(row.meal) : ""}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                });
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="space-y-4 pt-2 text-center text-xs text-foreground">
+        <p>상기 일정은 항공 및 현지 사정에 의해 다소 변경될 수 있습니다.</p>
+        <p>{formatDateKor(getTodayDateString())}</p>
+        <p className="font-bold">(주) 하나투어</p>
+      </div>
+
+    </div>
+  );
+}
+
+function renderDetailText(value: string, description = "", isHotel = false): React.ReactNode {
+  const trimmed = value.trim();
+  const detail = description.trim();
+  if (!trimmed && !detail) {
+    return "";
+  }
+
+  const hotelMatch = /^(?:\[(숙박|호텔)\]|(숙박|호텔))\s*:?\s*(.*)$/u.exec(trimmed);
+  const descriptionNode = detail ? (
+    <>
+      {trimmed ? <br /> : null}
+      <span>{detail}</span>
+    </>
+  ) : null;
+
+  if (isHotel) {
+    if (hotelMatch) {
+      const label = hotelMatch[1] ?? "";
+      const hotelDetail = (hotelMatch[2] ?? "").trim();
+      return (
+        <span>
+          <span className="font-bold">{label}</span>
+          {hotelDetail ? ` ${hotelDetail}` : ""}
+          {descriptionNode}
+        </span>
+      );
+    }
+
+    return (
+      <span>
+        <span className="font-bold">숙박</span>
+        {trimmed ? ` ${trimmed}` : ""}
+        {descriptionNode}
+      </span>
+    );
+  }
+
+  if (!hotelMatch) {
+    return (
+      <span>
+        <span className="font-bold">{trimmed}</span>
+        {descriptionNode}
+      </span>
+    );
+  }
+
+  const label = hotelMatch[1] ?? "";
+  const hotelDetail = (hotelMatch[2] ?? "").trim();
+  return (
+    <span>
+      <span className="font-bold">{label}</span>
+      {hotelDetail ? ` ${hotelDetail}` : ""}
+      {descriptionNode}
+    </span>
+  );
+}
+
+function renderMealText(value: string): React.ReactNode {
+  const lines = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return "";
+
+  return (
+    <span>
+      {lines.map((line, index) => {
+        const match = /^(조식|중식|석식)\s*[:：]?\s*(.*)$/.exec(line);
+        if (!match) {
+          return (
+            <span key={line + index}>
+              {line}
+              {index < lines.length - 1 ? <br /> : null}
+            </span>
+          );
+        }
+
+        const label = match[1] ?? "";
+        const detail = (match[2] ?? "").trim();
+
+        return (
+          <span key={line + index}>
+            <span className="font-medium">{label}</span>
+            {detail ? ` ${detail}` : ""}
+            {index < lines.length - 1 ? <br /> : null}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+// ── 견적서 미리보기 ───────────────────────────────────────
+
+type CostCategory = "항공" | "숙박" | "관광" | "식사" | "차량" | "가이드" | "기타";
+
+type CostGroup = {
+  label: CostCategory;
+  items: QuoteData["items"];
+  subtotal: number;
+};
+
+const COST_CATEGORY_ORDER: readonly CostCategory[] = [
+  "항공",
+  "숙박",
+  "관광",
+  "식사",
+  "차량",
+  "가이드",
+  "기타",
+];
+
+function mapCostCategory(category: QuoteCategory | string): CostCategory {
+  if (category === "FLIGHT") return "항공";
+  if (category === "HOTEL") return "숙박";
+  if (category === "SIGHTSEEING") return "관광";
+  if (category === "MEAL") return "식사";
+  if (category === "VEHICLE") return "차량";
+  if (category === "GUIDE" || category === "가이드" || category === "guide") return "가이드";
+  return "기타";
+}
+
+function groupQuoteItems(quote: QuoteData): CostGroup[] {
+  const grouped = new Map<CostCategory, QuoteData["items"]>();
+  const exchangeRates = getQuoteExchangeRates(quote);
+  for (const category of COST_CATEGORY_ORDER) {
+    grouped.set(category, []);
+  }
+
+  for (const item of quote.items) {
+    const key = mapCostCategory(item.category);
+    const bucket = grouped.get(key);
+    if (bucket) bucket.push(item);
+  }
+
+  return COST_CATEGORY_ORDER.flatMap((label) => {
+    const bucket = grouped.get(label) ?? [];
+    if (bucket.length === 0) return [];
+    const subtotal = bucket.reduce(
+      (sum, item) => sum + calculateItemSubtotalKrw(item, exchangeRates),
+      0
+    );
+    return [{ label, items: bucket, subtotal }];
+  });
+}
+
+function QuotePreview({ quote }: { quote: QuoteData | null }) {
+  if (!quote) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">견적 데이터가 없습니다.</p>
+      </div>
+    );
+  }
+
+  const grouped = groupQuoteItems(quote);
+  const exchangeRates = getQuoteExchangeRates(quote);
+  const subtotalKrw = grouped.reduce((sum, group) => sum + group.subtotal, 0);
+  const groundProfit = quote.summary.groundProfit ?? 0;
+  const agencyFeeWithGroundProfit = quote.summary.agencyFee + groundProfit;
+  const totalKrw = subtotalKrw + groundProfit + quote.summary.agencyFee + quote.summary.vat;
+  const validUntil = quote.header.validUntil || quote.header.writtenAt;
+  const summaryRows = [
+    { label: "항목소계", value: subtotalKrw },
+    { label: "여행사수수료", value: agencyFeeWithGroundProfit },
+    { label: "VAT", value: quote.summary.vat },
+    { label: "TOTAL", value: totalKrw, isTotal: true },
+  ];
+
+  return (
+    <div className={PREVIEW_DOCUMENT_CLASS}>
+      <PreviewDocumentHeader
+        title="견적 산출 내역서"
+      />
+      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB]">
+        <table className={PREVIEW_WIDE_TABLE_CLASS}>
+          <colgroup>
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[34%]" />
+            <col className="w-[10%]" />
+            <col className="w-[9%]" />
+            <col className="w-[9%]" />
+            <col className="w-[8%]" />
+          </colgroup>
+          <thead style={{ backgroundColor: PREVIEW_STYLE.brand }} className="whitespace-nowrap text-white">
+            <tr>
+              <th className="px-3 py-2 text-center font-medium">항목</th>
+              <th className="px-3 py-2 text-center font-medium">지역</th>
+              <th className="px-3 py-2 text-center font-medium">날짜</th>
+              <th className="px-3 py-2 text-center font-medium">상세내역</th>
+              <th className="px-3 py-2 text-center font-medium">인원/개수</th>
+              <th className="px-3 py-2 text-center font-medium">단가</th>
+              <th className="px-3 py-2 text-center font-medium">합계(원)</th>
+              <th className="px-3 py-2 text-center font-medium">건별합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grouped.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-3 text-center text-muted-foreground">
+                  항목이 없습니다.
+                </td>
+              </tr>
+            ) : (
+              grouped.flatMap(({ label, items, subtotal }) => {
+                const count = items.length;
+                return items.map((item, index) => {
+                  const isFirstRow = index === 0;
+                  const rowKey = item.id
+                    ? `${item.id}-${index}`
+                    : `${label}-${index}-${item.description}`;
+
+                  return (
+                    <Fragment key={rowKey}>
+                    <tr className="border-t border-border hover:bg-muted/20">
+                        {isFirstRow ? (
+                          <td
+                            rowSpan={count}
+                            className="border-r border-[#D1D5DB] bg-[#F3E8FF] px-3 py-1.5 align-middle text-center font-bold text-foreground"
+                          >
+                            {label}
+                          </td>
+                        ) : null}
+                        <td className="whitespace-nowrap px-3 py-1.5 text-center text-muted-foreground">{item.region || ""}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-center text-muted-foreground">{item.date || ""}</td>
+                        <td className="px-3 py-1.5 text-left text-foreground">
+                          <div className="whitespace-pre-wrap">{item.description || ""}</div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right">{item.quantity || 0}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                          {getExchangeRateForItem(exchangeRates, item).code}{" "}
+                          {item.unitPrice ? item.unitPrice.toLocaleString() : 0}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium">
+                          {calculateItemSubtotalKrw(item, exchangeRates).toLocaleString()}
+                        </td>
+                        {isFirstRow ? (
+                          <td
+                            rowSpan={count}
+                            className="border-l border-[#D1D5DB] px-3 py-1.5 text-right font-semibold text-foreground"
+                          >
+                            {subtotal.toLocaleString()}
+                          </td>
+                        ) : null}
+                      </tr>
+                    </Fragment>
+                  );
+                });
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className={`${PREVIEW_WIDE_TABLE_CLASS} border-collapse`}>
+          <colgroup>
+            <col className="w-[12.5%]" />
+            <col className="w-[43.75%]" />
+            <col className="w-[43.75%]" />
+          </colgroup>
+          <tbody>
+            {summaryRows.map((row, index) => (
+              <tr key={row.label}>
+                {index === 0 ? (
+                  <td
+                    rowSpan={summaryRows.length}
+                    className="align-middle border border-[#D1D5DB] bg-[#F3E8FF] px-3 py-1.5 text-center font-bold text-foreground"
+                  >
+                    예상 총 경비
+                  </td>
+                ) : null}
+                <td
+                  className="whitespace-nowrap border border-[#D1D5DB] bg-[#FFF9FAFB] px-3 py-1.5 text-center font-medium text-muted-foreground"
+                >
+                  {row.label}
+                </td>
+                <td
+                  className={`whitespace-nowrap border border-[#D1D5DB] px-3 py-1.5 text-right font-semibold ${
+                    row.isTotal ? "text-red-600" : "text-foreground"
+                  }`}
+                >
+                  {row.value.toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="pt-1 text-right text-xs font-medium text-foreground">
+        이 견적은 {formatDateKor(validUntil)} 까지만 유효합니다
+      </p>
+
+      <div className="pt-4 text-left text-xs leading-5 text-foreground">
+        <p>(주)하나투어</p>
+        <p>서울시 종로구 인사동 5길 41</p>
+        <p>TEL: 1577-1233 | FAX: 02-1234-5678</p>
+      </div>
+    </div>
+  );
+}

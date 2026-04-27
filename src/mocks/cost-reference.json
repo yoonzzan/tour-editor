@@ -1,0 +1,22 @@
+[
+  { "category": "FLIGHT", "description": "국제선 항공 (성인)", "refPrice": 650000 },
+  { "category": "FLIGHT", "description": "국제선 항공 (아동)", "refPrice": 520000 },
+  { "category": "FLIGHT", "description": "국내선 항공", "refPrice": 120000 },
+  { "category": "HOTEL", "description": "싱가포르 호텔 (2인 1실/1박)", "refPrice": 120000 },
+  { "category": "HOTEL", "description": "방콕 호텔 (2인 1실/1박)", "refPrice": 80000 },
+  { "category": "HOTEL", "description": "파타야 호텔 (2인 1실/1박)", "refPrice": 70000 },
+  { "category": "HOTEL", "description": "도쿄 호텔 (2인 1실/1박)", "refPrice": 130000 },
+  { "category": "SIGHTSEEING", "description": "센토사섬 입장료", "refPrice": 25000 },
+  { "category": "SIGHTSEEING", "description": "가든스 바이 더 베이", "refPrice": 20000 },
+  { "category": "SIGHTSEEING", "description": "왓 포 사원", "refPrice": 10000 },
+  { "category": "SIGHTSEEING", "description": "후지산 5합목", "refPrice": 15000 },
+  { "category": "MEAL", "description": "조식 (뷔페)", "refPrice": 20000 },
+  { "category": "MEAL", "description": "중식 (현지식)", "refPrice": 15000 },
+  { "category": "MEAL", "description": "석식 (레스토랑)", "refPrice": 22000 },
+  { "category": "VEHICLE", "description": "현지 전용 버스 (1일)", "refPrice": 50000 },
+  { "category": "VEHICLE", "description": "공항 픽업/샌딩", "refPrice": 30000 },
+  { "category": "GUIDE", "description": "현지 가이드 (1일)", "refPrice": 35000 },
+  { "category": "GUIDE", "description": "인솔자 비용 (전일정)", "refPrice": 200000 },
+  { "category": "OTHER", "description": "여행자 보험", "refPrice": 5000 },
+  { "category": "OTHER", "description": "세금·서비스 (1인)", "refPrice": 30000 }
+]

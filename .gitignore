@@ -1,0 +1,45 @@
+node_modules/
+.next/
+out/
+build/
+
+# 환경변수 — 절대 커밋 금지
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Claude Code 개인 설정
+.claude/settings.local.json
+CLAUDE.local.md
+
+# 로컬 에이전트/도구 상태
+.bkit/runtime/
+.bkit/snapshots/
+.bkit/state/
+.playwright-mcp/
+.gitnexus/
+.tmp-*
+dev.db
+
+# 테스트 산출물
+coverage/
+playwright-report/
+test-results/
+.playwright/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/migrations/
+
+# 기타
+*.tsbuildinfo
+/tmp/

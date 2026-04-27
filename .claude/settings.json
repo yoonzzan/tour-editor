@@ -1,0 +1,91 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx prisma *)",
+      "Bash(node scripts/*)",
+      "Bash(git status)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git push origin feature/*)",
+      "Bash(git push origin fix/*)",
+      "Bash(git stash *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Read(*)",
+      "Write(src/**)",
+      "Write(docs/**)",
+      "Write(prisma/**)",
+      "Write(scripts/**)",
+      "Write(.claude/**)",
+      "Write(CLAUDE.md)",
+      "Write(AGENTS.md)",
+      "Write(package.json)",
+      "Write(.env.example)",
+      "Write(*.config.*)",
+      "Write(*.json)"
+    ],
+    "deny": [
+      "Bash(git push origin main)",
+      "Bash(git push origin master)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(chmod 777 *)",
+      "Bash(curl * | bash)",
+      "Write(.env)",
+      "Write(.env.local)",
+      "Write(.env.production)",
+      "Write(.env.*.local)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write(src/**/*.ts,src/**/*.tsx)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-write-ts.sh",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-tool-use.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/on-stop.sh",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_COMPACT_THRESHOLD": "0.75"
+  }
+}

@@ -1,0 +1,113 @@
+@startuml TourEditorSequence
+title Tour Editor - 팝업 초기화, 상품 조회, 저장, Excel 다운로드 시퀀스
+
+autonumber
+skinparam ParticipantPadding 24
+skinparam BoxPadding 12
+skinparam ResponseMessageBelowArrow true
+
+actor "사용자" as User
+participant "허브 부모 창" as Parent
+participant "EditorShell\n클라이언트" as Client
+participant "Zustand Store\nuseEditorStore" as Store
+participant "Next.js API Routes" as API
+participant "NextAuth\ngetApiToken" as Auth
+participant "도메인 서비스\nsrc/lib" as Domain
+database "SQLite + Prisma\n개발 DB" as DB
+participant "MCP 상품 API" as MCP
+participant "Mock 데이터\nsrc/mocks" as Mock
+participant "Excel 생성 모듈\nsrc/lib/excel" as Excel
+
+== 팝업 진입 ==
+User -> Parent: 견적 상세 화면에서 에디터 열기
+Parent -> Client: /editor/popup?quoteNo=...&role=...
+Client -> API: GET /api/editor/init?quoteNo=...
+API -> Auth: JWT 세션 검증
+alt 인증 실패
+  Auth --> API: 토큰 없음
+  API --> Client: 401 Unauthorized
+  Client --> User: 초기화 오류 표시
+else 인증 성공
+  Auth --> API: token.sub, token.role
+  API -> DB: quoteCode로 Quote 조회\n최신 QuoteVersion 포함
+  alt 기존 견적 있음
+    DB --> API: Quote + 최신 QuoteVersion
+    API --> Client: 견적 메타데이터 + 일정표 + 견적서
+    Client -> Store: initFromVersion(itinerary, quote)
+    Client --> User: 편집 가능한 에디터 표시
+  else 신규 견적
+    DB --> API: null
+    API --> Client: quote: null, version: null
+    Client --> User: 상품 검색 팝업 열기
+  end
+end
+
+== 상품 조회 ==
+User -> Client: 상품코드 입력
+Client -> API: GET /api/mcp/products/:code
+API -> Auth: 세션 또는 허용된 개발 토큰 검증
+alt USE_MOCK_MCP=true 이고 mock 존재
+  API -> Mock: products.json 조회
+  Mock --> API: mock 상품 데이터
+else MCP 실연동 사용
+  API -> MCP: fetchSaleProductFromMcp(code)
+  alt MCP 조회 성공
+    MCP --> API: 상품 원본 payload
+  else MCP 오류 또는 상품 없음
+    MCP --> API: 오류
+    opt mock fallback 존재
+      API -> Mock: products.json 조회
+      Mock --> API: fallback 상품 데이터
+    end
+  end
+end
+API -> Domain: mapMcpProductToItinerary(payload)
+Domain --> API: ItineraryData
+API --> Client: 일정표 데이터 + 데이터 출처 메타정보
+Client -> Store: loadFromProduct(itinerary)
+Client --> User: 일정표 에디터에 반영
+
+== 버전 저장 ==
+User -> Client: 변경 사유 입력 후 저장
+Client -> Store: itinerary, quote, currentVersion 읽기
+Client -> API: POST /api/quotes/:id/versions\nitineraryData, quoteData, expectedVersion
+API -> Auth: JWT 세션 검증
+API -> DB: Quote의 Bid 배정 UserID 조회
+alt 배정 UserID 불일치
+  API --> Client: 403 Forbidden
+  Client --> User: 권한 없음 표시
+else 배정 UserID 일치
+  API -> Domain: createVersion(input)
+  Domain -> DB: quote.findUnique({ id })\nlatestVersion 조회
+  alt expectedVersion 불일치
+    DB --> Domain: 현재 latestVersion
+    Domain --> API: VersionConflictError
+    API --> Client: 409 VERSION_CONFLICT
+    Client --> User: 최신 버전 새로고침 안내
+  else expectedVersion 일치
+    Domain -> DB: quoteVersion.count({ quoteId })
+    DB --> Domain: 기존 버전 수
+    Domain -> Domain: generateVersionNo()
+    Domain -> DB: QuoteVersion snapshot INSERT
+    Domain -> DB: Quote.latestVersion UPDATE
+    DB --> Domain: 생성된 버전
+    Domain --> API: versionNo, savedAt
+    API --> Client: 201 Created
+    Client -> Store: markSaved()
+    Client -> Parent: postMessage SAVE_COMPLETE
+    Client --> User: 저장 완료 표시
+  end
+end
+
+== Excel 다운로드 ==
+User -> Client: 일정표 또는 견적서 다운로드
+Client -> API: GET/POST /api/quotes/:id/export?type=itinerary|cost
+API -> Auth: JWT 세션 검증
+API -> DB: 요청 버전 snapshot 조회\n또는 미리보기 payload 사용
+API -> Domain: 견적 데이터와 파일명 날짜 정규화
+Domain -> Excel: generateItineraryWorkbook()\n또는 generateCostWorkbook()
+Excel --> API: xlsx workbook buffer
+API --> Client: Excel 다운로드 응답
+Client --> User: .xlsx 파일 다운로드
+
+@enduml
