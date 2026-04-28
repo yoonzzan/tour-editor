@@ -100,6 +100,46 @@ npm run dev
 └── scripts/quality-gate.sh    # 품질 게이트 스크립트
 ```
 
+## Overall Flow
+
+```mermaid
+flowchart TD
+  Hub[허브 견적 상세] --> Popup[에디터 팝업<br/>/editor/popup?quoteNo&role]
+  Popup --> Init[GET /api/editor/init]
+  Init --> Auth{인증 및 배정 UserID 검증}
+  Auth -- 실패 --> Denied[401/403 오류]
+  Auth -- 성공 --> VersionState{저장된 QuoteVersion 있음?}
+  VersionState -- 있음 --> Load[최신 snapshot 로드<br/>Zustand store 초기화]
+  VersionState -- 없음 --> Import[SearchPopup<br/>상품코드 / 파일 / 직접입력]
+
+  Import --> Product[상품코드 조회<br/>MCP 또는 mock]
+  Import --> File[파일/텍스트 일정 파싱<br/>xlsx, pdf, hwpx, text]
+  File --> Format{지원 형식?}
+  Format -- xls/hwp 등 미지원 --> Convert[변환 안내 422]
+  Format -- 지원 --> Parse[AI 후보 + 기본 표 파서 후보 생성]
+  Parse --> Pick{품질 기준 비교}
+  Pick -- AI 품질 충분 --> AiResult[AI 결과 사용<br/>원문 식사/호텔 보정]
+  Pick -- 표 구조가 더 안정적 --> TableResult[기본 표 파서 결과 사용]
+  Pick -- AI 실패 또는 품질 부족 --> Fallback[기본 파서 fallback<br/>진단 메시지 표시]
+
+  Product --> Edit[일정표/견적서 편집<br/>isDirty + autosave]
+  AiResult --> Edit
+  TableResult --> Edit
+  Fallback --> Edit
+  Load --> Edit
+
+  Edit --> History[버전 이력 및 비교]
+  History --> Readonly[과거 버전 읽기 전용<br/>입력/불러오기/항공 조회 비활성화]
+  Edit --> Save[POST /api/quotes/:id/versions<br/>expectedVersion]
+  Save --> Conflict{버전 충돌?}
+  Conflict -- 예 --> Reload[409 충돌 안내<br/>최신 버전 새로고침]
+  Conflict -- 아니오 --> CreateVersion[QuoteVersion INSERT<br/>Quote.latestVersion 갱신]
+  CreateVersion --> Parent[SAVE_COMPLETE postMessage]
+  Edit --> Export[Excel 다운로드<br/>일정표 또는 견적서]
+```
+
+세부 시퀀스와 역할별 흐름은 `docs/diagrams/sequence_diagram.puml`, `docs/diagrams/role_flows.puml`에 있습니다.
+
 ## Runtime Flow
 
 ```text
