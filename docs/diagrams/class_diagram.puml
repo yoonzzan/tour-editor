@@ -143,6 +143,25 @@ package "도메인 서비스" {
     +enforceAccommodationPolicy(data): ItineraryData
   }
 
+  class ItineraryParserService <<함수>> {
+    +parseItineraryWithDiagnostics(input): ItineraryParseResult
+    +parseItineraryByAi(input): ItineraryData
+    +parseFallbackFromRaw(rawText): ItineraryData
+    +normalizeAiResult(raw, title): ItineraryData
+  }
+
+  class SpreadsheetTextService <<함수>> {
+    +spreadsheetRowsToText(rows): string
+    +normalizeSpreadsheetCell(value): string
+  }
+
+  class ParseUploadRoute <<API>> {
+    +POST(request): Response
+    +spreadsheetToText(file): string
+    +pdfToText(file): string
+    +hwpxToText(file): string
+  }
+
   class QuoteCurrencyService <<함수>> {
     +getQuoteExchangeRates(data)
     +recalculateQuoteData(input): QuoteData
@@ -187,6 +206,10 @@ CreateVersionService ..> VersionNumberService
 EditorStore ..> ItineraryData
 EditorStore ..> QuoteData
 McpMappingService ..> ItineraryData
+ParseUploadRoute ..> ItineraryParserService
+ParseUploadRoute ..> SpreadsheetTextService
+ItineraryParserService ..> ItineraryData
+ItineraryParserService ..> ItineraryPolicyService
 QuoteCurrencyService ..> QuoteData
 ExcelService ..> ItineraryData
 ExcelService ..> QuoteData
@@ -201,6 +224,15 @@ end note
 note bottom of EditorStore
   클라이언트 draft 상태와 DB 저장 snapshot은 분리합니다.
   저장 이후의 기준 데이터는 DB의 QuoteVersion입니다.
+  상품/파일/직접 입력으로 일정을 불러오면
+  isDirty=true가 되어 미저장 변경으로 취급합니다.
+end note
+
+note right of ItineraryParserService
+  파일 업로드 파싱은 AI 후보와 기본 파서 후보를 함께 평가합니다.
+  표 형태 입력에서는 원문 식사/호텔 열을 권위값으로 사용합니다.
+  지원 형식은 .xlsx, .pdf, .hwpx, text 계열입니다.
+  .xls와 .hwp는 변환 안내 오류를 반환합니다.
 end note
 
 @enduml

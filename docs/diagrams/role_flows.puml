@@ -26,6 +26,7 @@ if (사용자 역할?) then (PARTNER)
       - 저장 가능
     end note
     :상품코드 MCP / 파일 첨부 / 직접 입력으로 일정 구성;
+    :파일 첨부 시 .xlsx/PDF/HWPX 파싱\n표 원문 식사/호텔 보정;
     :견적 항목과 단가 입력;
     :저장 클릭;
     :QuoteVersion snapshot INSERT;
@@ -48,6 +49,7 @@ elseif (AGENT / Internal)
       - 버전 비교/이력 확인 가능
     end note
     :일정 불러오기 및 항공 조회;
+    :파일 파싱 결과의 진단 source 확인\nai / fallback-tabular / fallback-quality;
     :원가/항공/일정 최종 검토;
     :처리완료 의미의 버전 저장;
     :QuoteVersion snapshot INSERT;
@@ -68,6 +70,7 @@ else (SALES)
       - Excel 다운로드 가능
     end note
     :일정/항공 실시간 데이터 확인;
+    :버전 이력에서 읽기 전용 snapshot 비교\n입력/불러오기/항공 조회는 비활성화;
     :고객 제안용 일정과 마진 최종 조정;
     :영업 수정 버전 저장;
     :QuoteVersion snapshot INSERT;

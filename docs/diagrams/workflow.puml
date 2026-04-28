@@ -14,6 +14,7 @@ state "비딩 진행 중" as BidOpen {
   state "협력사 버전 저장됨" as VersionSaved
 
   WaitingForQuote --> PartnerEditing : 협력사가 에디터 열기
+  WaitingForQuote --> PartnerEditing : 상품/파일/직접 입력으로 일정 불러오기
   PartnerEditing --> VersionSaved : v1.0 저장
   VersionSaved --> PartnerEditing : 협력사 추가 수정
 }
@@ -40,6 +41,7 @@ state "영업 검토" as SalesReviewing {
   state "영업 버전 저장됨" as SalesVersionSaved
 
   SalesEditing --> VersionCompare : 버전 비교
+  SalesEditing --> VersionCompare : 읽기 전용 snapshot 미리보기
   SalesEditing --> ExcelExport : 일정표/견적서 다운로드
   SalesEditing --> SalesVersionSaved : 최종 수정 버전 저장
   VersionCompare --> SalesEditing : 검토로 복귀
@@ -62,6 +64,17 @@ Closed --> [*]
 note right of SalesReviewing
   SALES도 배정 UserID가 일치하면 편집/저장할 수 있습니다.
   Quote 기반 API는 서버에서 salesId를 검증합니다.
+end note
+
+note left of PartnerEditing
+  파일 업로드 파싱은 .xlsx/PDF/HWPX/text를 지원합니다.
+  .xls와 .hwp는 변환 안내 후 중단합니다.
+  표 기반 일정은 원문 식사/호텔 열을 우선합니다.
+end note
+
+note right of VersionCompare
+  과거 버전 미리보기는 읽기 전용입니다.
+  본문 입력뿐 아니라 일정 불러오기와 항공 조회도 막습니다.
 end note
 
 note bottom of VersionSaved

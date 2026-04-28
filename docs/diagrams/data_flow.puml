@@ -20,6 +20,7 @@ package "Tour Editor 클라이언트" {
   component "팝업 라우트\n/editor/popup" as Popup
   component "EditorShell" as EditorShell
   component "에디터 컴포넌트\n일정표, 견적서, 버전, 미리보기" as Components
+  component "SearchPopup\n상품코드/파일/직접입력" as SearchPopup
   component "Zustand Store\nitinerary, quote, isDirty" as Store
   component "TanStack Query\n서버 상태" as Query
   component "localStorage 임시저장\nuseAutoSave" as Draft
@@ -29,7 +30,9 @@ package "Next.js 서버" {
   component "API Routes\nsrc/app/api/**" as API
   component "NextAuth\nJWT 세션" as Auth
   component "버전 서비스\ncreateVersion" as Version
-  component "일정 서비스\nparse, policy, display" as Itinerary
+  component "일정 파서\naiParser" as Parser
+  component "스프레드시트 텍스트화\nspreadsheetText" as SheetText
+  component "일정 정책/표시\npolicy, display" as Itinerary
   component "견적 서비스\ncurrency, generate" as QuoteSvc
   component "MCP 매핑\nmapSaleProductToItinerary" as Mapper
   component "Excel 서비스\nworkbook 생성" as Excel
@@ -59,7 +62,8 @@ Store --> Components : "편집 중 draft 상태 제공"
 Components --> Store : "사용자 일정/견적 수정"
 Store --> Draft : "임시 자동 저장"
 
-Components --> API : "GET /api/mcp/products/:code"
+Components --> SearchPopup : "일정 불러오기"
+SearchPopup --> API : "GET /api/mcp/products/:code"
 API --> Config : "USE_MOCK_MCP, MCP URL/token 확인"
 API --> ProductMock : "mock 상품 조회"
 API --> MCP : "설정에 따라 실제 상품 조회"
@@ -67,15 +71,21 @@ MCP --> API : "상품 원본 payload"
 ProductMock --> API : "mock 또는 fallback 상품"
 API --> Mapper : "ItineraryData로 정규화"
 Mapper --> API : "ItineraryData"
-API --> Components : "상품 일정표 데이터"
-Components --> Store : "loadFromProduct"
+API --> SearchPopup : "상품 일정표 데이터"
+SearchPopup --> Store : "loadFromProduct\nisDirty=true"
 
-Components --> API : "POST /api/itinerary/parse"
+SearchPopup --> API : "POST /api/itinerary/parse\nfile/text/title"
 API --> Config : "OPENAI_* 설정 확인"
-API --> AI : "일정 원문 파싱 요청"
-AI --> API : "구조화된 파싱 결과"
-API --> Itinerary : "정규화 및 검증"
-Itinerary --> Components : "ItineraryData 변경분"
+API --> SheetText : ".xlsx 셀 표시값 추출\n시간 셀 HH:mm 보정"
+API --> Parser : ".pdf/.hwpx/text 원문 정규화"
+Parser --> AI : "분석 + JSON 변환\n가능할 때만"
+AI --> Parser : "AI 일정 후보"
+Parser --> Parser : "기본 파서 후보 생성"
+Parser --> Parser : "품질 비교\nai/fallback-tabular/fallback-quality"
+Parser --> Parser : "표 원문 식사/호텔 보정"
+Parser --> API : "ItineraryData + diagnostics"
+API --> SearchPopup : "파싱 결과"
+SearchPopup --> Store : "loadFromProduct\nisDirty=true"
 
 Components --> API : "POST /api/quotes/:id/versions"
 API --> Auth : "서버 사이드 역할 확인"
@@ -87,6 +97,17 @@ DB --> Version : "생성된 버전"
 Version --> API : "versionNo, savedAt"
 API --> Components : "201 Created"
 Components --> Parent : "postMessage SAVE_COMPLETE"
+
+Components --> API : "GET /api/quotes/:id/versions"
+API --> Auth : "권한 및 배정 UserID 확인"
+API --> DB : "QuoteVersion 목록 조회"
+DB --> API : "version summaries 또는 오류"
+API --> Components : "버전 이력/오류 상태"
+
+Components --> API : "GET /api/quotes/:id/versions/:version"
+API --> DB : "QuoteVersion snapshot 조회"
+API --> Components : "읽기 전용 미리보기 데이터"
+Components --> Components : "본문 입력/일정 불러오기/항공 조회 비활성화"
 
 Components --> API : "GET/POST /api/quotes/:id/export"
 API --> DB : "필요 시 저장된 버전 조회"
