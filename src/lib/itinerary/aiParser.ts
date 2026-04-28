@@ -311,7 +311,7 @@ function normalizeOptionalDate(value: string | undefined): string {
 function fallbackType(content: string): ScheduleItemType {
   const text = content.toLowerCase();
   if (
-    /(HOTEL\s*-\s*|숙박|리조트|resort|check[-\s]?in|객실|room|\b\d+\s*박\b)/iu
+    /(HOTEL\s*-\s*|숙박|리조트|resort|check[-\s]?in|체크[-\s]?인|체크[-\s]?아웃|호텔\s*(?:투숙|휴식)|객실|room|\b\d+\s*박\b)/iu
       .test(content)
   ) {
     return "ACCOMMODATION";
@@ -1249,7 +1249,7 @@ function isMetaOnlyScheduleText(value: string): boolean {
   if (isSummaryTrailerLine(text)) return true;
   if (/^\d+\.\s*(?:출발일|인원|차량|호텔|포함|불포함|비고|지상비)\s*(?:[:：]|\s+)/u.test(text)) return true;
   if (
-    /^(?:상품명|일정명|제목|견적번호|기준코드|작성일|작성일자|수신|고객|담당자|여행도시|방문도시|지역|여행기간|기간|출발일|인원|차량|현지차량|항공\s*출발|항공출발|출국편|출발편|항공\s*귀국|항공귀국|귀국편|리턴편|항공\s*도착|도착편|숙박호텔|숙박\s*호텔|호텔명|포함|포함사항|불포함|불포함사항|선택관광|옵션투어|유의사항|비고|참고|지상비|여행요금|요금|금액|쇼핑\s*센터\s*방문\s*수|쇼핑\s*센터\s*수|쇼핑\s*횟수)\s*(?:[:：]|\s+|$)/u
+    /^(?:상품명|단체명|행사명|일정명|제목|견적명|견적번호|기준코드|작성일|작성일자|수신|고객|담당자|여행도시|방문도시|지역|여행기간|여행\s*기간|행사기간|기간|여행시작일|여행\s*시작일|여행종료일|여행\s*종료일|시작일|종료일|출발일|도착일|인원|차량|현지차량|항공\s*출발|항공출발|출국편|출발편|출발\s*항공편|항공편|항공편\s*정보|항공정보|항공\s*귀국|항공귀국|귀국편|리턴편|항공\s*도착|도착편|귀국\s*항공편|리턴\s*항공편|숙박호텔|숙박\s*호텔|호텔명|포함|포함내역|포함\s*내역|포함사항|포함\s*사항|불포함|불포함내역|불포함\s*내역|불포함사항|불포함\s*사항|선택관광|옵션투어|유의사항|비고|참고|지상비|여행요금|요금|금액|쇼핑\s*센터\s*방문\s*수|쇼핑\s*센터\s*수|쇼핑\s*횟수)\s*(?:[:：]|\s+|$)/u
       .test(text.replace(/\s+/gu, " "))
   ) {
     return true;
@@ -1453,10 +1453,10 @@ function labelPattern(label: string): string {
 
 function extractLabeledValue(line: string, labels: string[]): string {
   const withoutListPrefix = stripMetaListPrefix(line).replace(/^['"`]+/u, "");
-  for (const label of labels) {
-    const pattern = new RegExp(`^${labelPattern(label)}\\s*(?:[:：]|\\s+)\\s*(.+)$`, "u");
+  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
+    const pattern = new RegExp(`^${labelPattern(label)}\\s*(?:[:：]|\\||\\s+)\\s*(.+)$`, "u");
     const matched = pattern.exec(withoutListPrefix);
-    if (matched?.[1]) return cleanText(matched[1]);
+    if (matched?.[1]) return cleanText(matched[1].replace(/^\|\s*/u, ""));
   }
   return "";
 }
@@ -1471,6 +1471,10 @@ function extractDateRangeFromText(text: string): { start: string; end: string } 
     start: matches[0] ?? "",
     end: matches.length > 1 ? matches[matches.length - 1] ?? "" : matches[0] ?? "",
   };
+}
+
+function hasExplicitMetaValue(value: string): boolean {
+  return Boolean(cleanText(value)) && !isMetaOnlyScheduleText(value);
 }
 
 type ItineraryMeta = {
@@ -1496,7 +1500,7 @@ function extractMetaFromRaw(
     .map((line) => cleanText(line))
     .filter(Boolean);
 
-  let groupName = cleanText(title);
+  let groupName = "";
   let writtenAt = "";
   let recipient = "";
   let cities = "";
@@ -1525,7 +1529,7 @@ function extractMetaFromRaw(
     const metaLine = stripMetaListPrefix(line).replace(/^['"`]+/u, "");
 
     if (!groupName) {
-      const name = extractLabeledValue(metaLine, ["상품명", "일정명", "제목", "견적번호", "기준코드"]);
+      const name = extractLabeledValue(metaLine, ["상품명", "단체명", "행사명", "일정명", "제목", "견적명"]);
       if (name) groupName = cleanText(name);
     }
 
@@ -1544,13 +1548,21 @@ function extractMetaFromRaw(
       if (found) cities = found;
     }
 
-    const rangeText = extractLabeledValue(metaLine, ["여행기간", "기간"]);
+    const rangeText = extractLabeledValue(metaLine, ["여행기간", "여행 기간", "기간", "행사기간"]);
     if (rangeText) {
       const range = extractDateRangeFromText(rangeText);
       if (range) {
         explicitStartDate = explicitStartDate || range.start;
         explicitEndDate = explicitEndDate || range.end;
       }
+    }
+    if (!explicitStartDate) {
+      const found = extractLabeledValue(metaLine, ["여행시작일", "여행 시작일", "시작일", "출발일"]);
+      if (found) explicitStartDate = parseDateFromAnyText(found);
+    }
+    if (!explicitEndDate) {
+      const found = extractLabeledValue(metaLine, ["여행종료일", "여행 종료일", "종료일", "도착일"]);
+      if (found) explicitEndDate = parseDateFromAnyText(found);
     }
 
     const passengerSummary = parsePassengerSummary(metaLine);
@@ -1578,11 +1590,11 @@ function extractMetaFromRaw(
     escort = escort ?? parseCountByToken(line, "인솔자");
 
     if (!departure) {
-      const found = extractLabeledValue(metaLine, ["항공 출발", "항공출발", "출국편", "출발편"]);
+      const found = extractLabeledValue(metaLine, ["항공 출발", "항공출발", "출국편", "출발편", "출발 항공편", "항공편", "항공편 정보", "항공정보"]);
       if (found) departure = found;
     }
     if (!arrival) {
-      const found = extractLabeledValue(metaLine, ["항공 귀국", "항공귀국", "귀국편", "리턴편", "항공 도착", "도착편"]);
+      const found = extractLabeledValue(metaLine, ["항공 귀국", "항공귀국", "귀국편", "리턴편", "항공 도착", "도착편", "귀국 항공편", "리턴 항공편"]);
       if (found) arrival = found;
     }
     if (!localVehicle) {
@@ -1608,11 +1620,11 @@ function extractMetaFromRaw(
     }
 
     if (!included) {
-      const found = extractLabeledValue(metaLine, ["포함사항", "포함"]);
+      const found = extractLabeledValue(metaLine, ["포함내역", "포함 내역", "포함사항", "포함 사항", "포함"]);
       if (found) included = cleanText(found);
     }
     if (!excluded) {
-      const found = extractLabeledValue(metaLine, ["불포함사항", "불포함"]);
+      const found = extractLabeledValue(metaLine, ["불포함내역", "불포함 내역", "불포함사항", "불포함 사항", "불포함"]);
       if (found) excluded = cleanText(found);
     }
     if (!optionalTour) {
@@ -1643,6 +1655,30 @@ function extractMetaFromRaw(
     notes = [notes, ...noteLines].filter(Boolean).join("\n");
   }
 
+  const sectionStopPattern = /^(?:상품명|단체명|행사명|일정명|여행기간|여행시작일|여행종료일|출발일|도착일|인원|차량|항공|항공편|호텔|숙박|포함|포함내역|포함사항|불포함|불포함내역|불포함사항|선택관광|옵션투어|유의사항|비고|참고|지상비|여행요금|요금|금액|쇼핑|\d+\s*일차|제\s*\d+\s*일)/u;
+  const collectSection = (labels: string[]): string => {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = stripMetaListPrefix(lines[index] ?? "").replace(/^['"`]+/u, "");
+      const labelOnly = labels.some((label) => new RegExp(`^${labelPattern(label)}\\s*[:：]?\\s*$`, "u").test(line));
+      if (!labelOnly) continue;
+
+      const values: string[] = [];
+      for (const next of lines.slice(index + 1)) {
+        const value = stripMetaListPrefix(next).replace(/^['"`]+/u, "");
+        if (!value) continue;
+        if (sectionStopPattern.test(value)) break;
+        if (extractDayNoFromScheduleLine(value) !== undefined) break;
+        if (isScheduleChromeToken(value)) continue;
+        values.push(cleanText(value.replace(/^[-•·*]\s*/u, "")));
+      }
+      const collected = values.filter(hasExplicitMetaValue).join(" / ");
+      if (collected) return collected;
+    }
+    return "";
+  };
+  included = included || collectSection(["포함내역", "포함 내역", "포함사항", "포함 사항"]);
+  excluded = excluded || collectSection(["불포함내역", "불포함 내역", "불포함사항", "불포함 사항"]);
+
   if (!cities) {
     const regionFromDays = days
       .flatMap((day) => day.items.map((item) => cleanText(item.region)))
@@ -1653,13 +1689,13 @@ function extractMetaFromRaw(
 
   const periodSourceExplicit = explicitStartDate || explicitEndDate;
   const startDate = explicitStartDate;
-  const endDate = explicitEndDate || explicitStartDate || "";
+  const endDate = explicitEndDate;
 
   const meta: ItineraryMeta = {};
 
   if (groupName || writtenAt) {
     meta.header = {
-      groupName: groupName || "",
+      groupName: groupName || cleanText(title),
       writtenAt: writtenAt || ISO_DATE_TODAY,
     };
   }
@@ -1742,7 +1778,7 @@ function mergeItineraryWithMeta(base: ItineraryData, meta: ItineraryMeta): Itine
   return {
     ...base,
     header: {
-      groupName: base.header.groupName || meta.header?.groupName || "",
+      groupName: meta.header?.groupName || base.header.groupName || "",
       writtenAt: base.header.writtenAt || meta.header?.writtenAt || ISO_DATE_TODAY,
     },
     overview: {
@@ -1788,6 +1824,59 @@ function mergeItineraryWithMeta(base: ItineraryData, meta: ItineraryMeta): Itine
   };
 }
 
+function mergeNonScheduleData(base: ItineraryData, source: ItineraryData): ItineraryData {
+  const sourceStart = normalizeOptionalDate(source.overview.travelPeriod.start);
+  const sourceEnd = normalizeOptionalDate(source.overview.travelPeriod.end);
+
+  return {
+    ...base,
+    header: {
+      groupName: cleanText(source.header.groupName) || base.header.groupName,
+      writtenAt: normalizeOptionalDate(source.header.writtenAt) || base.header.writtenAt,
+    },
+    overview: {
+      ...base.overview,
+      recipient: cleanText(source.overview.recipient) || base.overview.recipient,
+      cities: cleanText(source.overview.cities) || base.overview.cities,
+      travelPeriod: {
+        start: sourceStart || base.overview.travelPeriod.start,
+        end: sourceEnd || base.overview.travelPeriod.end,
+      },
+      passengers: {
+        adult: source.overview.passengers.adult || base.overview.passengers.adult,
+        child: source.overview.passengers.child || base.overview.passengers.child,
+        infant: source.overview.passengers.infant || base.overview.passengers.infant,
+        escort: source.overview.passengers.escort || base.overview.passengers.escort,
+      },
+      fare: {
+        adultPerPerson: source.overview.fare.adultPerPerson || base.overview.fare.adultPerPerson,
+        childPerPerson: source.overview.fare.childPerPerson || base.overview.fare.childPerPerson,
+        infantPerPerson: source.overview.fare.infantPerPerson || base.overview.fare.infantPerPerson,
+        total: source.overview.fare.total || base.overview.fare.total,
+        totalWithCard: source.overview.fare.totalWithCard || base.overview.fare.totalWithCard,
+      },
+    },
+    basics: {
+      ...base.basics,
+      flight: {
+        departure: cleanText(source.basics.flight.departure) || base.basics.flight.departure,
+        arrival: cleanText(source.basics.flight.arrival) || base.basics.flight.arrival,
+        localVehicle: cleanText(source.basics.flight.localVehicle) || base.basics.flight.localVehicle,
+      },
+      accommodation: {
+        hotel: cleanText(source.basics.accommodation.hotel) || base.basics.accommodation.hotel,
+        grade: cleanText(source.basics.accommodation.grade) || base.basics.accommodation.grade,
+        occupancy: cleanText(source.basics.accommodation.occupancy) || base.basics.accommodation.occupancy,
+      },
+      included: cleanText(source.basics.included) || base.basics.included,
+      excluded: cleanText(source.basics.excluded) || base.basics.excluded,
+      optionalTour: cleanText(source.basics.optionalTour) || base.basics.optionalTour,
+      shoppingCenters: source.basics.shoppingCenters || base.basics.shoppingCenters,
+      notes: cleanText(source.basics.notes) || base.basics.notes,
+    },
+  };
+}
+
 function recalculateDayDatesFromStart(data: ItineraryData): ItineraryData {
   const sortedDays = [...data.days].sort((a, b) => a.dayNo - b.dayNo);
   const firstDayNo = sortedDays[0]?.dayNo ?? 1;
@@ -1820,6 +1909,13 @@ function isGenericAccommodationItem(item: ScheduleItem): boolean {
   const hotel = compactText(item.hotel ?? "");
   if (hotel && hotel !== content) return false;
   return /^(?:호텔|숙박|리조트)?(?:명입력|입력|체크인|휴식|투숙|호텔체크인|호텔체크인후휴식|리조트투숙)$/u.test(content);
+}
+
+function isHotelLabelOnlyItem(item: ScheduleItem): boolean {
+  const content = compactText(item.content);
+  if (!/^(?:hotel|호텔)$/iu.test(content)) return false;
+  const detail = cleanText(item.detail ?? "");
+  return !detail || isMeaningfulText(detail);
 }
 
 function hasSameAccommodation(items: ScheduleItem[], candidate: ScheduleItem): boolean {
@@ -2063,7 +2159,7 @@ function mergeRawHotelItems(itinerary: ItineraryData, rawText: string): Itinerar
         const rawHotels = hotelByDay.get(day.dayNo) ?? [];
         if (rawHotels.length === 0) return day;
 
-        const items = day.items.filter((item) => !isGenericAccommodationItem(item));
+        const items = day.items.filter((item) => !isGenericAccommodationItem(item) && !isHotelLabelOnlyItem(item));
         for (const hotel of rawHotels) {
           if (hasSameAccommodation(items, hotel)) continue;
           items.push(hotel);
@@ -2599,12 +2695,28 @@ function firstValue(record: Record<string, unknown>, keys: string[]): unknown {
 }
 
 function normalizeAiItemPayload(item: unknown): unknown {
+  if (typeof item === "string" || typeof item === "number") {
+    return { content: String(item) };
+  }
   if (!isUnknownRecord(item)) return item;
+  const detail = firstValue(item, ["detail", "details", "상세", "설명", "비고"]) ?? item.detail;
+  const content = firstValue(item, [
+    "content",
+    "title",
+    "name",
+    "description",
+    "text",
+    "activity",
+    "내용",
+    "일정",
+    "일정내용",
+    "행사",
+  ]) ?? item.content ?? detail;
   return {
     ...item,
     type: firstValue(item, ["type", "category", "kind", "구분", "항목구분"]) ?? item.type,
-    content: firstValue(item, ["content", "title", "name", "description", "내용", "일정"]) ?? item.content,
-    detail: firstValue(item, ["detail", "details", "상세"]) ?? item.detail,
+    content,
+    detail,
     mealSlot: firstValue(item, ["mealSlot", "mealType", "slot", "식사구분"]) ?? item.mealSlot,
     hotel: firstValue(item, ["hotel", "hotelName", "숙박", "호텔명"]) ?? item.hotel,
   };
@@ -2977,8 +3089,9 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
     fallbackQuality.meaningfulItemCount >= aiQuality.expectedMinimumItemCount;
 
   if (shouldUseFallback) {
+    const itinerary = aiResult ? mergeNonScheduleData(fallbackResult, aiResult) : fallbackResult;
     return {
-      itinerary: fallbackResult,
+      itinerary,
       diagnostics: {
         source: aiResult && (hasTabularCellBoundaries && (fallbackQuality.acceptable || tabularFallbackMeetsMinimum))
           ? "fallback-tabular"

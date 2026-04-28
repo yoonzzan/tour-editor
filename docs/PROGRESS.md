@@ -171,6 +171,7 @@
 | 2026-04-20 | E2E 브라우저 검증 | 저장(v1.2→v1.3), Excel 다운로드(RFC5987 한글파일명), partner/sales 역할UI, 항공조회 팝업 5건+선택 반영 브라우저 실확인. SaveModal ✕ 버튼 type="button" 누락 버그 수정. SALES 읽기전용 — main에 pointer-events-none+opacity-75 적용. |
 | 2026-04-21 | E2E 안정화 | T-804/T-805 스펙 안정화(카운트 기준 보정, 저장 모달 선택자·응답 동기화). `e2e/global-setup.ts`에서 테스트 데이터 `QuoteVersion` 초기화 처리 추가. Quality Gate(`npm run quality`) 통과, `17 passed` 확인. |
 | 2026-04-24 | UI/견적 현행화 | 일정표·견적서 에디터 폭 통일, 숫자 입력 앞자리 0 정규화, 견적 자동 생성 수량 성인 인원 기준 적용, 지상비수익·하나투어수익·견적 유효기간·버전 비교 UI 문서 현행화. |
+| 2026-04-28 | PDF 파싱 보강 | 이미지형 PDF에서 텍스트 추출이 부족하면 PDF 페이지를 이미지로 렌더링해 OpenAI Vision OCR fallback을 수행하고, OCR 텍스트를 기존 AI/기본 표 파서 품질 비교에 투입하도록 문서 현행화. |
 
 ---
 

@@ -654,6 +654,43 @@ DATE|CITY|TRSFT|TIME|ITINERARY|MEALS
     expect(contents.some((content) => content.includes("비비하놈 모스크"))).toBe(true);
     expect(contents).toContain("LOTTE CITY HOTEL TASHKENT PALAE 4*");
   });
+
+  it("extracts OCR quote metadata and removes hotel label-only schedule rows", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `단체명 | 상해항주황산 20+2 견적용
+여행시작일 | 2026.04.28
+여행종료일 | 2026.05.02
+항공편 정보 | KE2229 08:35/09:40
+포함내역 | 왕복항공권 / 전 일정 호텔 / 전용차량
+불포함내역 | 개인경비 / 매너팁
+1일차 | 2026. 04. 28. | 상해 | KE2229 전용차 | 08:35 | 운동장 출발 / 김해공항 도착 후 출국수속
+1일차 | 식사 구분 | 조식 | 한식
+1일차 | 이동 | 김해공항 출발 / 상해행 항공 도착 (비행)
+1일차 | 관광 | 오산상황관광
+1일차 | 관광 | 송가고택관광
+1일차 | 기타 | 호텔 체크-인 및 휴식
+1일차 | Hotel | Hampton by Hilton (2인실) TEL:+86-571-8510-5888`;
+
+    const result = await parseItineraryByAi({ rawText, title: "0405상해항주황산 20+2 견적용" });
+    const dayOneContents = result.days[0]?.items.map((item) => item.content) ?? [];
+    const accommodationItems = result.days[0]?.items.filter((item) => item.type === "ACCOMMODATION") ?? [];
+
+    expect(result.header.groupName).toBe("상해항주황산 20+2 견적용");
+    expect(result.overview.travelPeriod).toEqual({
+      start: "2026-04-28",
+      end: "2026-05-02",
+    });
+    expect(result.basics.flight.departure).toBe("KE2229 08:35/09:40");
+    expect(result.basics.included).toBe("왕복항공권 / 전 일정 호텔 / 전용차량");
+    expect(result.basics.excluded).toBe("개인경비 / 매너팁");
+    expect(dayOneContents).not.toContain("Hotel");
+    expect(dayOneContents).toContain("호텔 체크-인 및 휴식");
+    expect(accommodationItems.map((item) => item.hotel ?? item.content)).toContain("Hampton by Hilton (2인실) TEL:+86-571-8510-5888");
+  });
 });
 
 describe("parseItineraryByAi AI pipeline", () => {
@@ -1138,6 +1175,161 @@ describe("parseItineraryByAi AI pipeline", () => {
     expect(result.diagnostics.source).toBe("ai");
     expect(items.find((item) => item.type === "SIGHTSEEING")?.content).toBe("싱가포르 국립박물관 견학");
     expect(items.find((item) => item.type === "MEAL")?.meal?.breakfast).toBe("호텔식");
+  });
+
+  it("keeps AI schedule items when PDF-like JSON uses strings or detail-only items", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+상품명: PDF 일정 테스트
+출발일: 2026-05-01
+
+[일차별 일정]
+1일차 | TRANSFER | 인천공항 출발 |  | 09:00 |
+1일차 | SIGHTSEEING | 시내 관광 |  |  |
+2일차 | ACCOMMODATION | 호텔 체크인 |  |  |`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2026-05-01", end: "2026-05-02" } },
+                days: [
+                  {
+                    dayNo: 1,
+                    items: [
+                      "인천공항 출발",
+                      { type: "SIGHTSEEING", detail: "시내 관광" },
+                    ],
+                  },
+                  {
+                    dayNo: 2,
+                    items: [{ category: "숙박", 상세: "호텔 체크인" }],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({
+      rawText: "제1일 인천공항 출발 시내 관광\n제2일 호텔 체크인",
+      title: "PDF 일정 테스트",
+    });
+    const contents = result.itinerary.days.flatMap((day) => day.items.map((item) => item.content));
+
+    expect(result.diagnostics.source).toBe("ai");
+    expect(contents).toContain("인천공항 출발");
+    expect(contents).toContain("시내 관광");
+    expect(contents.some((content) => content.includes("호텔 체크인"))).toBe(true);
+  });
+
+  it("preserves AI metadata when tabular fallback is selected for schedule rows", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+상품명: AI 상해항주황산
+출발일: 2026-04-28
+기간: 2026-04-28 ~ 2026-05-02
+항공: 출발편 KE2229 08:35/09:40 / 귀국편 KE2230 18:00/20:30
+포함: 왕복항공권 / 호텔
+불포함: 개인경비
+
+[일차별 일정]
+1일차 | TRANSFER | 상해 도착 후 호텔 이동 |  | 09:40 |
+2일차 | SIGHTSEEING | 서호 관광 |  | 10:00 |`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                header: { groupName: "AI 상해항주황산" },
+                overview: {
+                  travelPeriod: { start: "2026-04-28", end: "2026-05-02" },
+                },
+                basics: {
+                  flight: {
+                    departure: "KE2229 08:35/09:40",
+                    arrival: "KE2230 18:00/20:30",
+                  },
+                  included: "왕복항공권 / 호텔",
+                  excluded: "개인경비",
+                },
+                days: [
+                  { dayNo: 1, items: [{ type: "TRANSFER", content: "상해 도착 후 호텔 이동", time: "09:40" }] },
+                  { dayNo: 2, items: [{ type: "SIGHTSEEING", content: "서호 관광", time: "10:00" }] },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({
+      rawText: `DATE | CITY | TRSFT | TIME | ITINERARY
+1일차 | 상해 | 전용버스 | 09:40 | 상해 도착 후 호텔 이동
+1일차 | 상해 | 전용버스 | 12:00 | 중식 후 오산상황관광
+2일차 | 항주 | 전용버스 | 10:00 | 서호 관광
+2일차 | 항주 | 전용버스 | 14:00 | 송가고택관광`,
+      title: "파일명 제목",
+    });
+
+    expect(result.diagnostics.source).toBe("fallback-tabular");
+    expect(result.itinerary.header.groupName).toBe("AI 상해항주황산");
+    expect(result.itinerary.overview.travelPeriod).toEqual({
+      start: "2026-04-28",
+      end: "2026-05-02",
+    });
+    expect(result.itinerary.basics.flight.departure).toBe("KE2229 08:35/09:40");
+    expect(result.itinerary.basics.flight.arrival).toBe("KE2230 18:00/20:30");
+    expect(result.itinerary.basics.included).toBe("왕복항공권 / 호텔");
+    expect(result.itinerary.basics.excluded).toBe("개인경비");
+    expect(result.itinerary.days.flatMap((day) => day.items.map((item) => item.content))).toContain("송가고택관광");
   });
 
   it("splits meal prefixes embedded in AI sightseeing and transfer content", async () => {

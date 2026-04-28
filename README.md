@@ -116,7 +116,9 @@ flowchart TD
   Import --> File[파일/텍스트 일정 파싱<br/>xlsx, pdf, hwpx, text]
   File --> Format{지원 형식?}
   Format -- xls/hwp 등 미지원 --> Convert[변환 안내 422]
-  Format -- 지원 --> Parse[AI 후보 + 기본 표 파서 후보 생성]
+  Format -- PDF 텍스트 부족 --> Ocr[페이지 이미지 OCR<br/>OpenAI Vision]
+  Format -- 지원 / 텍스트 충분 --> Parse[AI 후보 + 기본 표 파서 후보 생성]
+  Ocr --> Parse
   Parse --> Pick{품질 기준 비교}
   Pick -- AI 품질 충분 --> AiResult[AI 결과 사용<br/>원문 식사/호텔 보정]
   Pick -- 표 구조가 더 안정적 --> TableResult[기본 표 파서 결과 사용]
@@ -336,7 +338,7 @@ User(PARTNER)
 | `/api/editor/init?quoteNo=...` | GET | 팝업 진입 시 견적과 최신 버전 조회 |
 | `/api/mcp/products/:code` | GET | 상품코드로 MCP 또는 mock 일정 조회 |
 | `/api/flights` | GET | 항공 mock/검색 데이터 조회 |
-| `/api/itinerary/parse` | POST | 일정 텍스트 AI 파싱 |
+| `/api/itinerary/parse` | POST | 일정 파일/텍스트 파싱, PDF OCR fallback, AI/기본 파서 품질 비교 |
 | `/api/quotes/:id/versions` | GET | 버전 목록 조회 |
 | `/api/quotes/:id/versions` | POST | 새 버전 생성 |
 | `/api/quotes/:id/versions/:version` | GET | 특정 버전 상세 조회 |
@@ -378,7 +380,7 @@ User(PARTNER)
 
 ### AI Itinerary Parsing
 
-`/api/itinerary/parse`는 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` 설정을 사용합니다. 파싱 결과는 일정표 데이터 구조에 맞게 정규화되어야 합니다.
+`/api/itinerary/parse`는 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` 설정을 사용합니다. PDF는 먼저 `pdf-parse`로 텍스트를 추출하고, 텍스트가 페이지 표식 수준이거나 너무 짧으면 PDF 페이지를 이미지로 렌더링해 OpenAI Vision OCR을 수행한 뒤 기존 일정 파서에 전달합니다. 파싱 결과는 일정표 데이터 구조에 맞게 정규화되어야 합니다.
 
 ### Excel
 
@@ -399,8 +401,8 @@ Excel 생성은 `src/lib/excel/`에만 위치합니다. 일정표는 `generateIt
 | `USE_MOCK_FLIGHTS` | 항공 mock 사용 여부 |
 | `USE_MOCK_COST_REF` | 원가 mock 사용 여부 |
 | `ALLOWED_PARENT_ORIGINS` | postMessage 허용 origin 목록 |
-| `OPENAI_API_KEY` | 일정 AI 파싱용 API key |
-| `OPENAI_MODEL` | AI 파싱 모델 |
+| `OPENAI_API_KEY` | 일정 AI 파싱 및 PDF OCR fallback용 API key |
+| `OPENAI_MODEL` | AI 파싱 모델. PDF OCR fallback을 위해 이미지 입력 지원 모델 필요 |
 | `OPENAI_BASE_URL` | AI API base URL |
 
 프로덕션 코드에서 `process.env`를 직접 읽지 않습니다. 새 환경변수는 `src/lib/config.ts`를 통해 노출합니다.

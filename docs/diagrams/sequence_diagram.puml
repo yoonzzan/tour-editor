@@ -79,6 +79,11 @@ else 지원 형식
     API -> Domain: ExcelJS로 셀 표시값 추출\n시간 전용 셀 HH:mm 보정
   else .pdf
     API -> Domain: pdf-parse로 텍스트 추출
+    alt 추출 텍스트 부족
+      API -> Domain: PDF 페이지 PNG 렌더링
+      API -> AI: Vision OCR 요청
+      AI --> API: OCR 텍스트
+    end
   else .hwpx
     API -> Domain: JSZip으로 XML 텍스트 추출
   else text/csv/json

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as ExcelJS from "exceljs";
 import JSZip from "jszip";
 import type { NextRequest } from "next/server";
@@ -6,6 +6,12 @@ import type { NextRequest } from "next/server";
 vi.mock("@/lib/auth", () => ({
   getApiToken: vi.fn(async () => ({ sub: "test-user" })),
 }));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.resetModules();
+  vi.unmock("pdf-parse");
+});
 
 async function makeHwpxFile(): Promise<File> {
   const zip = new JSZip();
@@ -314,5 +320,117 @@ describe("/api/itinerary/parse", () => {
     expect(dayOneContents).toContain("LOTTE CITY HOTEL TASHKENT PALAE 4*");
     expect(dayOneContents).not.toContain("HILTON GARDEN INN 4*");
     expect(dayTwoContents).toContain("HILTON GARDEN INN 4*");
+  });
+
+  it("uses OCR fallback when uploaded PDF has no extractable text", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const getText = vi.fn(async () => ({ text: "\n-- 1 of 2 --\n\n-- 2 of 2 --\n" }));
+    const getScreenshot = vi.fn(async () => ({
+      pages: [
+        { dataUrl: "data:image/png;base64,page-one" },
+        { dataUrl: "data:image/png;base64,page-two" },
+      ],
+    }));
+    const destroy = vi.fn(async () => undefined);
+
+    vi.doMock("pdf-parse", () => ({
+      PDFParse: vi.fn(() => ({
+        getText,
+        getScreenshot,
+        destroy,
+      })),
+    }));
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages?: Array<{ content?: unknown }>;
+        response_format?: { type: string };
+      };
+      const firstContent = body.messages?.[0]?.content;
+
+      if (Array.isArray(firstContent)) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: "제1일 | 상해 | 전용버스 | 09:00 | 상해 도착 후 호텔 이동\n제2일 | 항주 | 전용버스 | 10:00 | 서호 관광",
+              },
+            },
+          ],
+        });
+      }
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+상품명: 상해항주황산 테스트
+출발일: 2026-04-05
+
+[일차별 일정]
+1일차 | TRANSFER | 상해 도착 후 호텔 이동 |  | 09:00 |
+2일차 | SIGHTSEEING | 서호 관광 |  | 10:00 |`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2026-04-05", end: "2026-04-06" } },
+                days: [
+                  { dayNo: 1, items: [{ type: "TRANSFER", time: "09:00", content: "상해 도착 후 호텔 이동" }] },
+                  { dayNo: 2, items: [{ type: "SIGHTSEEING", time: "10:00", content: "서호 관광" }] },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { POST } = await import("./route");
+    const formData = new FormData();
+    formData.append("file", new File(["fake pdf"], "scan.pdf", { type: "application/pdf" }));
+
+    const request = {
+      formData: async () => formData,
+    } as unknown as NextRequest;
+
+    const response = await POST(request);
+    const payload = (await response.json()) as {
+      itinerary?: {
+        days?: Array<{
+          items?: Array<{
+            content?: string;
+          }>;
+        }>;
+      };
+      error?: string;
+    };
+
+    expect(payload.error).toBeUndefined();
+    expect(response.status).toBe(200);
+    expect(getScreenshot).toHaveBeenCalledWith({
+      desiredWidth: 1600,
+      first: 6,
+      imageBuffer: false,
+      imageDataUrl: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const contents = payload.itinerary?.days?.flatMap((day) => day.items?.map((item) => item.content ?? "") ?? []) ?? [];
+    expect(contents).toContain("상해 도착 후 호텔 이동");
+    expect(contents).toContain("서호 관광");
   });
 });

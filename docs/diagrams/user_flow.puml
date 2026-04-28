@@ -49,7 +49,7 @@ partition "편집 프로세스" {
       :검색/불러오기 팝업;
       :상품코드 MCP / 파일 첨부 / 직접 입력 선택;
       if (파일 첨부?) then (예)
-        :.xlsx / PDF / HWPX / 텍스트 파싱;
+        :.xlsx / PDF / HWPX / 텍스트 파싱\n이미지형 PDF는 OCR fallback;
         :AI 후보와 기본 파서 후보 품질 비교;
         :표 원문 식사/호텔 값 보정;
       endif

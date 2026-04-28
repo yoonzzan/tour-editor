@@ -3,11 +3,31 @@ import JSZip from "jszip";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getApiToken } from "@/lib/auth";
+import { config } from "@/lib/config";
 import { parseItineraryWithDiagnostics } from "@/lib/itinerary/aiParser";
 import { spreadsheetRowsToText } from "@/lib/itinerary/spreadsheetText";
 
+export const runtime = "nodejs";
+
 const UNSUPPORTED_XLS_MESSAGE = "구형 Excel(.xls)은 보안상 지원하지 않습니다. Excel에서 .xlsx로 저장한 뒤 다시 업로드해 주세요.";
 const UNSUPPORTED_HWP_MESSAGE = "구형 한글(.hwp)은 아직 지원하지 않습니다. .hwpx 또는 PDF로 저장한 뒤 업로드해 주세요.";
+const PDF_OCR_MAX_PAGES = 6;
+const PDF_OCR_IMAGE_WIDTH = 1600;
+const PDF_TEXT_MIN_CHARS = 80;
+
+type OcrMessageContent =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+interface OcrChatChoice {
+  message?: {
+    content?: string | null;
+  };
+}
+
+interface OcrChatCompletionResponse {
+  choices?: OcrChatChoice[];
+}
 
 function normalizeExcelDate(date: Date): string {
   const year = date.getFullYear();
@@ -69,13 +89,106 @@ async function spreadsheetToText(file: File): Promise<string> {
   return spreadsheetRowsToText(rows);
 }
 
+function stripPdfPageMarkers(text: string): string {
+  return text
+    .replace(/--\s*\d+\s+of\s+\d+\s*--/giu, "\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
+function isMeaningfulPdfText(text: string): boolean {
+  const cleaned = stripPdfPageMarkers(text);
+  const compact = cleaned.replace(/\s+/gu, "");
+  if (compact.length >= PDF_TEXT_MIN_CHARS) return true;
+  return compact.length >= 30 && /(?:견적|일정|호텔|출발|도착|조식|중식|석식|포함|불포함)/u.test(compact);
+}
+
+function extractOcrText(payload: OcrChatCompletionResponse): string {
+  return payload.choices?.[0]?.message?.content?.trim() ?? "";
+}
+
+async function callPdfOcr(pageImages: string[]): Promise<string> {
+  if (!config.ai.apiKey) {
+    throw new Error("PDF에서 텍스트를 추출하지 못했습니다. 이미지형 PDF라 OCR이 필요하지만 AI API key가 없습니다.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.ai.parseTimeoutMs);
+  const content: OcrMessageContent[] = [
+    {
+      type: "text",
+      text: [
+        "이미지는 여행 견적서/PDF 일정표 페이지다.",
+        "OCR로 보이는 모든 한글/영문/숫자 텍스트를 원문 순서대로 추출해라.",
+        "표는 행 단위로 보존하고, 셀 구분이 보이면 | 로 구분해라.",
+        "추측하지 말고 이미지에 보이는 텍스트만 출력해라.",
+        "설명 없이 추출 텍스트만 출력해라.",
+      ].join("\n"),
+    },
+    ...pageImages.map((url) => ({
+      type: "image_url" as const,
+      image_url: { url },
+    })),
+  ];
+
+  try {
+    const response = await fetch(`${config.ai.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.ai.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: config.ai.model,
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = (await response.json()) as OcrChatCompletionResponse;
+    if (response.ok) {
+      const text = extractOcrText(payload);
+      if (text) return text;
+      throw new Error("PDF OCR 결과가 비어 있습니다.");
+    }
+
+    throw new Error(`PDF OCR 호출 실패 (${response.status})`);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`PDF OCR 시간이 ${config.ai.parseTimeoutMs}ms를 초과했습니다.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function pdfToText(file: File): Promise<string> {
   const { PDFParse } = await import("pdf-parse");
   const arrayBuffer = await file.arrayBuffer();
   const parser = new PDFParse({ data: new Uint8Array(arrayBuffer) });
   try {
     const result = await parser.getText();
-    return result.text;
+    if (isMeaningfulPdfText(result.text)) return stripPdfPageMarkers(result.text);
+
+    const screenshot = await parser.getScreenshot({
+      desiredWidth: PDF_OCR_IMAGE_WIDTH,
+      first: PDF_OCR_MAX_PAGES,
+      imageBuffer: false,
+      imageDataUrl: true,
+    });
+    const pageImages = screenshot.pages
+      .map((page) => page.dataUrl)
+      .filter(Boolean);
+    if (pageImages.length === 0) return stripPdfPageMarkers(result.text);
+
+    return await callPdfOcr(pageImages);
   } finally {
     await parser.destroy();
   }

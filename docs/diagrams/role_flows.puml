@@ -26,7 +26,7 @@ if (사용자 역할?) then (PARTNER)
       - 저장 가능
     end note
     :상품코드 MCP / 파일 첨부 / 직접 입력으로 일정 구성;
-    :파일 첨부 시 .xlsx/PDF/HWPX 파싱\n표 원문 식사/호텔 보정;
+    :파일 첨부 시 .xlsx/PDF/HWPX 파싱\n이미지형 PDF OCR fallback\n표 원문 식사/호텔 보정;
     :견적 항목과 단가 입력;
     :저장 클릭;
     :QuoteVersion snapshot INSERT;

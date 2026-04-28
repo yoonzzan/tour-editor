@@ -68,6 +68,7 @@ end note
 
 note left of PartnerEditing
   파일 업로드 파싱은 .xlsx/PDF/HWPX/text를 지원합니다.
+  PDF 텍스트 추출이 부족한 이미지형 PDF는 OCR fallback을 수행합니다.
   .xls와 .hwp는 변환 안내 후 중단합니다.
   표 기반 일정은 원문 식사/호텔 열을 우선합니다.
 end note

@@ -230,6 +230,7 @@ end note
 
 note right of ItineraryParserService
   파일 업로드 파싱은 AI 후보와 기본 파서 후보를 함께 평가합니다.
+  이미지형 PDF는 OCR fallback 텍스트를 원문으로 사용합니다.
   표 형태 입력에서는 원문 식사/호텔 열을 권위값으로 사용합니다.
   지원 형식은 .xlsx, .pdf, .hwpx, text 계열입니다.
   .xls와 .hwp는 변환 안내 오류를 반환합니다.
