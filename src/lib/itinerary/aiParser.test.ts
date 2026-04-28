@@ -418,6 +418,9 @@ DATE|CITY|TRSFT|TIME|ITINERARY|MEALS
     const allContents = result.days.flatMap((day) => day.items.map((item) => item.content));
     const allDetails = result.days.flatMap((day) => day.items.flatMap((item) => item.detail ? [item.detail] : []));
     const joined = [...allContents, ...allDetails].join("\n");
+    const dayOneMeals = result.days[0]?.items.filter((item) => item.type === "MEAL") ?? [];
+    const dayTwoMeals = result.days[1]?.items.filter((item) => item.type === "MEAL") ?? [];
+    const dayThreeMeals = result.days[2]?.items.filter((item) => item.type === "MEAL") ?? [];
 
     expect(result.days.map((day) => day.dayNo)).toEqual([1, 2, 3, 4]);
     expect(result.overview.travelPeriod.end).toBe(result.days[3]?.date);
@@ -427,7 +430,12 @@ DATE|CITY|TRSFT|TIME|ITINERARY|MEALS
     expect(allContents).toContain("후라노 이동.");
     expect(allContents).toContain("인천 국제 공항 도착");
     expect(allContents).toContain("조잔케이 뷰 호텔 (2인1실/ 화실 또는 양실 기준)");
+    expect(allContents).not.toContain("호텔");
     expect(allContents).not.toContain("HOTEL");
+    expect(dayOneMeals.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("불포함");
+    expect(dayTwoMeals.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+    expect(dayTwoMeals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("호텔식");
+    expect(dayThreeMeals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("현지식");
     expect(joined).not.toContain("ATTN");
     expect(joined).not.toContain("FROM");
     expect(joined).not.toContain("[견적서]");
@@ -440,6 +448,211 @@ DATE|CITY|TRSFT|TIME|ITINERARY|MEALS
     expect(joined).not.toContain("현지 호텔은 미수배");
     expect(joined).not.toContain("해외여행자보험");
     expect(joined).not.toContain("환율은 변동");
+  });
+
+  it("keeps post-meal schedule text out of meal values", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `DATE\tCITY\tTRSFT\tTIME\tITINERARY\tMEALS
+제2일\t싱가포르\t전용버스\t\t식사 구분\t조식\t후
+\t싱가포르\t전용버스\t14:00\t식사 구분\t중식\t후 싱가포르 국립박물관 견학
+\t싱가포르\t전용버스\t\t식사 구분\t석식\t후 싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학`;
+
+    const result = await parseItineraryByAi({ rawText, title: "식사 테스트" });
+    const items = result.days[0]?.items ?? [];
+    const meals = items.filter((item) => item.type === "MEAL");
+    const contents = items.map((item) => item.content);
+
+    expect(meals.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("조식");
+    expect(meals.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("중식");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("석식");
+    expect(contents).not.toContain("후");
+    expect(contents).not.toContain("후 싱가포르 국립박물관 견학");
+    expect(contents).toContain("싱가포르 국립박물관 견학");
+    expect(contents).toContain("싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학");
+  });
+
+  it("parses meal values from the trailing meal column in headerless tabular schedules", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `제2일\t싱가포르\t전용버스\t호텔조식후\t조:호텔식
+04월 28일\t\t\t오전 자유일정 후 가이드 미팅 (10:30 예정)\t
+(화)\t\t\t유네스코 지정 싱가포르 국립식물원 보타닉가든 견학 \t중:키세키일식부풰
+\t\t\t중식 후 싱가포르 국립박물관 견학 (14:00 예정)\t
+\t\t\t싱가포르 도시개발청 URA 시티갤러리 견학\t석:송파바쿠테
+\t\t\t싱가포르 차이나타운 견학\t
+\t\t\t가든스 바이 더 베이 2돔 (Jurassic World 포함) 견학\t
+\t\t\t석식 후 싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학\t
+\t\t\t슈퍼트리 랩소디 야경쇼 관람 (19:45 예정)\t
+\t\t\t리버보트 탑승하여 싱가포르 야경 관람 후 호텔 복귀 및 휴식\t
+\t\t\tHOTEL - Aloft Singapore Novena - Urban Room 3박\t`;
+
+    const result = await parseItineraryByAi({ rawText, title: "싱가포르 테스트" });
+    const items = result.days[0]?.items ?? [];
+    const meals = items.filter((item) => item.type === "MEAL");
+    const contents = items.map((item) => item.content);
+
+    expect(meals.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+    expect(meals.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("키세키일식부풰");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("송파바쿠테");
+    expect(contents).toContain("유네스코 지정 싱가포르 국립식물원 보타닉가든 견학");
+    expect(contents).toContain("싱가포르 국립박물관 견학 ( 예정)");
+    expect(contents).toContain("Aloft Singapore Novena - Urban Room 3박");
+    expect(contents).not.toContain("호텔");
+  });
+
+  it("parses meal values when meal markers and names are split across adjacent cells", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `제 04일\t사마르칸트\t\t\t호텔 조식 후\t\t조:\t호텔식
+3/20(목)\t\t\t\t오늘날 가장 뛰어난 동양건축물의 집결체 레기스탄 광장\t\t중:\t현지식
+\t\t\t\t<울루그백 마드라사, 티라카리 마드라사, 셰르다르 마드라사>\t\t석:\t한   식
+\t\t\t\t기차역 이동\t\t\t
+\t\t아프로시압\t16:51\t사마르칸트 출발\t\t\t
+\t타슈켄트\t\t19:17\t타슈켄트 도착\t\t\t
+\t\t\t\t석식 후 호텔 투숙\t\t\t
+\t\t\t\t숙 소 : LOTTE CITY HOTEL TASHKENT PALAE 4*\t\t\t`;
+
+    const result = await parseItineraryByAi({ rawText, title: "우즈베키스탄 테스트" });
+    const items = result.days[0]?.items ?? [];
+    const meals = items.filter((item) => item.type === "MEAL");
+    const transfers = items.filter((item) => item.type === "TRANSFER");
+
+    expect(meals.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+    expect(meals.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("현지식");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("한 식");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.content).not.toBe("호텔 투숙");
+    expect(transfers.find((item) => item.content.includes("사마르칸트 출발"))?.time).toBe("16:51");
+    expect(transfers.find((item) => item.content.includes("타슈켄트 도착"))?.time).toBe("19:17");
+    expect(items.find((item) => item.type === "ACCOMMODATION")?.content).toContain("LOTTE CITY HOTEL TASHKENT PALAE");
+  });
+
+  it("keeps sightseeing rows after split meal columns in headerless tabular schedules", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `제 02일\t타슈켄트\t\t\t호텔 조식 후\t\t조:\t호텔식
+3/18(화)\t\t\t10:00\t가이드 미팅  \t\t중:\t현지식
+\t\t\t\t타슈켄트에서 유명한 화이트 모스크 미노르 모스크\t\t석:\t현지식
+\t\t\t\t구시가지에 위치한 타슈켄트 종교 중심지 하자티 이맘 광장\t\t\t
+\t\t\t\t우즈베키스탄 전통시장 초르수 바자르\t\t\t
+\t\t\t\t타슈켄트 최고의 번화가 브로드 웨이\t\t\t
+\t\t\t\t세계정복을 꿈꿨던 아무르 티무르의 동상이 있는 아무르 티무르 과장\t\t\t
+\t\t\t\t석식 및 호텔 투숙\t\t\t
+\t\t\t\t숙 소 : LOTTE CITY HOTEL TASHKENT PALAE 4*\t\t\t`;
+
+    const result = await parseItineraryByAi({ rawText, title: "타슈켄트 테스트" });
+    const day = result.days.find((entry) => entry.dayNo === 2);
+    const items = day?.items ?? [];
+    const contents = items.map((item) => item.content);
+
+    expect(items.find((item) => item.content === "가이드 미팅")?.time).toBe("10:00");
+    expect(contents).toContain("타슈켄트에서 유명한 화이트 모스크 미노르 모스크");
+    expect(contents).toContain("구시가지에 위치한 타슈켄트 종교 중심지 하자티 이맘 광장");
+    expect(contents).toContain("우즈베키스탄 전통시장 초르수 바자르");
+    expect(contents).toContain("타슈켄트 최고의 번화가 브로드 웨이");
+    expect(contents).toContain("세계정복을 꿈꿨던 아무르 티무르의 동상이 있는 아무르 티무르 과장");
+    expect(contents).toContain("LOTTE CITY HOTEL TASHKENT PALAE 4*");
+    expect(items.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+    expect(items.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("현지식");
+    expect(items.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("현지식");
+  });
+
+  it("parses full Korean meal labels with colon in sparse tabular schedules", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `제 2 일\t\t전용차량\t\t 호텔 조식 후\t\t\t\t\t\t\t조식 : 호텔식\t
+\t싱가폴 \t\t\t국립식물원 및 오차드로드\t\t\t\t\t\t\t\t
+\t \t\t\t중식 칠리크랩\t\t\t\t\t\t\t중식 :칠리크랩\t
+\t \t\t\t가든스 바이 더 베이 -클라우돔, 플라워돔 \t\t\t\t\t\t\t\t
+\t\t\t\t석식 페라나칸\t\t\t\t\t\t\t석식 :페라나칸\t
+\t\t\t\t가든스 바이 더 베이 랩소디쇼\t\t\t\t\t\t\t\t
+\t \t\t\t\t 호텔 투숙 및 휴식\t\t\t\t\t\t\t\t`;
+
+    const result = await parseItineraryByAi({ rawText, title: "싱가폴 식사 테스트" });
+    const day = result.days.find((entry) => entry.dayNo === 2);
+    const items = day?.items ?? [];
+    const meals = items.filter((item) => item.type === "MEAL");
+    const contents = items.map((item) => item.content);
+
+    expect(meals.map((item) => item.mealSlot)).toEqual(["breakfast", "lunch", "dinner"]);
+    expect(meals.map((item) => item.content)).toEqual(["호텔식", "칠리크랩", "페라나칸"]);
+    expect(contents).not.toContain("중식 칠리크랩");
+    expect(contents).not.toContain("석식 페라나칸");
+    expect(contents).toContain("국립식물원 및 오차드로드");
+    expect(contents).toContain("가든스 바이 더 베이 -클라우돔, 플라워돔");
+  });
+
+  it("keeps each row under the day where it appears in multi-day tabular schedules", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `제 01일\t인천\t항공\t10:00\t인천 출발\t\t조:\t불포함
+\t타슈켄트\t전용버스\t15:00\t타슈켄트 도착 후 시내 관광\t\t중:\t기내식
+\t\t\t\t숙 소 : DAY ONE HOTEL\t\t석:\t현지식
+제 02일\t사마르칸트\t전용버스\t\t호텔 조식 후 사마르칸트 이동\t\t조:\t호텔식
+\t\t\t\t레기스탄 광장 관광\t\t중:\t현지식
+\t\t아프로시압\t16:51\t사마르칸트 출발\t\t\t
+\t타슈켄트\t\t19:17\t타슈켄트 도착\t\t\t
+\t\t\t\t숙 소 : DAY TWO HOTEL\t\t석:\t한식`;
+
+    const result = await parseItineraryByAi({ rawText, title: "멀티데이 테스트" });
+    const dayOne = result.days.find((day) => day.dayNo === 1);
+    const dayTwo = result.days.find((day) => day.dayNo === 2);
+    const dayOneContents = dayOne?.items.map((item) => item.content) ?? [];
+    const dayTwoContents = dayTwo?.items.map((item) => item.content) ?? [];
+
+    expect(dayOneContents.some((content) => content.includes("인천 출발"))).toBe(true);
+    expect(dayOneContents.some((content) => content.includes("타슈켄트 도착 후 시내 관광"))).toBe(true);
+    expect(dayOneContents).toContain("DAY ONE HOTEL");
+    expect(dayOneContents).not.toContain("레기스탄 광장 관광");
+    expect(dayOneContents).not.toContain("DAY TWO HOTEL");
+    expect(dayTwoContents.some((content) => content.includes("사마르칸트 이동"))).toBe(true);
+    expect(dayTwoContents.some((content) => content.includes("레기스탄 광장 관광"))).toBe(true);
+    expect(dayTwoContents).toContain("DAY TWO HOTEL");
+    expect(dayTwoContents).not.toContain("DAY ONE HOTEL");
+    expect(dayTwo?.items.find((item) => item.content.includes("사마르칸트 출발"))?.time).toBe("16:51");
+    expect(dayTwo?.items.find((item) => item.content.includes("타슈켄트 도착"))?.time).toBe("19:17");
+  });
+
+  it("ignores date cells while preserving itinerary text in the same row", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryByAi } = await import("@/lib/itinerary/aiParser");
+    const rawText = `4\tThu Mar 20 2025 09:00:00 GMT+0900 (Korean Standard Time)\t사마르칸트\t\t호텔 조식 후\t\t조:\t호텔식
+\t3/20(목)\t\t\t오늘날 가장 뛰어난 동양건축물의 집결체 레기스탄 광장\t\t중:\t현지식
+\t\t\t\t<울루그백 마드라사, 티라카리 마드라사, 셰르다르 마드라사>\t\t석:\t한 식
+\t\t\t\t중앙아시아 최대의 모스크로 손꼽히는 비비하놈 모스크등\t\t\t
+\t\t\t\t숙 소 : LOTTE CITY HOTEL TASHKENT PALAE 4*\t\t\t`;
+
+    const result = await parseItineraryByAi({ rawText, title: "우즈베키스탄 날짜셀 테스트" });
+    const day = result.days.find((entry) => entry.dayNo === 4);
+    const contents = day?.items.map((item) => item.content) ?? [];
+
+    expect(contents.some((content) => content.includes("Thu Mar"))).toBe(false);
+    expect(contents.some((content) => content.includes("3/20"))).toBe(false);
+    expect(contents.some((content) => content.includes("레기스탄 광장"))).toBe(true);
+    expect(contents.some((content) => content.includes("울루그백 마드라사"))).toBe(true);
+    expect(contents.some((content) => content.includes("비비하놈 모스크"))).toBe(true);
+    expect(contents).toContain("LOTTE CITY HOTEL TASHKENT PALAE 4*");
   });
 });
 
@@ -615,5 +828,378 @@ describe("parseItineraryByAi AI pipeline", () => {
     expect(hotelByDay.get(1)?.join("\n")).toContain("조잔케이 뷰 호텔");
     expect(hotelByDay.get(2)?.join("\n")).toContain("소운쿄 다이세츠 호텔");
     expect(hotelByDay.get(3)?.join("\n")).toContain("삿포로 프린스 호텔");
+  });
+
+  it("corrects AI meal labels with fallback values from trailing meal columns", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+상품명: 싱가포르 테스트
+출발일: 2025-04-28
+
+[일차별 일정]
+2일차 | MEAL | 호텔 |  |  |
+2일차 | SIGHTSEEING | 오전 자유일정 후 가이드 미팅 |  | 10:30 |
+2일차 | MEAL | 중식 |  | 14:00 |
+2일차 | SIGHTSEEING | 싱가포르 도시개발청 URA 시티갤러리 견학 |  |  |
+2일차 | SIGHTSEEING | 싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학 |  |  |
+2일차 | MEAL | 석식 |  |  |
+2일차 | SIGHTSEEING | 리버보트 탑승하여 싱가포르 야경 관람 후 호텔 복귀 및 휴식 |  |  |`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2025-04-28", end: "2025-04-28" } },
+                days: [
+                  {
+                    dayNo: 1,
+                    date: "2025-04-28",
+                    items: [
+                      { type: "MEAL", mealSlot: "breakfast", content: "호텔" },
+                      { type: "SIGHTSEEING", content: "오전 자유일정 후 가이드 미팅", time: "10:30" },
+                      { type: "MEAL", mealSlot: "lunch", content: "중식", time: "14:00" },
+                      { type: "SIGHTSEEING", content: "싱가포르 도시개발청 URA 시티갤러리 견학" },
+                      { type: "SIGHTSEEING", content: "싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학" },
+                      { type: "MEAL", mealSlot: "dinner", content: "석식" },
+                      { type: "SIGHTSEEING", content: "리버보트 탑승하여 싱가포르 야경 관람 후 호텔 복귀 및 휴식" },
+                    ],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rawText = `제2일\t싱가포르\t전용버스\t호텔조식후\t조:호텔식
+04월 28일\t\t\t오전 자유일정 후 가이드 미팅 (10:30 예정)\t
+(화)\t\t\t유네스코 지정 싱가포르 국립식물원 보타닉가든 견학 \t중:키세키일식부풰
+\t\t\t중식 후 싱가포르 국립박물관 견학 (14:00 예정)\t
+\t\t\t싱가포르 도시개발청 URA 시티갤러리 견학\t석:송파바쿠테
+\t\t\t석식 후 싱가포르 랜드마크 머라이언 공원 및 에스플러네이드 외관 견학\t
+\t\t\tHOTEL - Aloft Singapore Novena - Urban Room 3박\t`;
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "싱가포르 테스트" });
+    const items = result.itinerary.days[0]?.items ?? [];
+    const meals = items.filter((item) => item.type === "MEAL");
+    const hotels = items.filter((item) => item.type === "ACCOMMODATION");
+
+    expect(result.diagnostics.source).toBe("fallback-tabular");
+    expect(meals.find((item) => item.mealSlot === "breakfast")?.content).toBe("호텔식");
+    expect(meals.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+    expect(meals.find((item) => item.mealSlot === "lunch")?.content).toBe("키세키일식부풰");
+    expect(meals.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("키세키일식부풰");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.content).toBe("송파바쿠테");
+    expect(meals.find((item) => item.mealSlot === "dinner")?.meal?.dinner).toBe("송파바쿠테");
+    expect(hotels.map((item) => item.hotel ?? item.content).join("\n")).toContain("Aloft Singapore Novena");
+  });
+
+  it("keeps AI results when they are much richer than the tabular fallback", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+      const aiItems = Array.from({ length: 25 }, (_, index) => ({
+        type: "SIGHTSEEING",
+        content: `AI 전용 일정 ${index + 1}`,
+      }));
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: aiItems
+                  .map((item, index) => `1일차 | ${item.type} | ${item.content} | | ${String(9 + index).padStart(2, "0")}:00 |`)
+                  .join("\n"),
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2026-04-28", end: "2026-04-28" } },
+                days: [
+                  {
+                    dayNo: 1,
+                    date: "2026-04-28",
+                    items: aiItems,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rawText = `제1일\t타슈켄트\t전용버스\t09:00\t기본 파서 일정 1
+\t\t\t10:00\t기본 파서 일정 2
+\t\t\t11:00\t기본 파서 일정 3
+\t\t\t12:00\t기본 파서 일정 4
+\t\t\t13:00\t기본 파서 일정 5
+\t\t\t14:00\t기본 파서 일정 6
+\t\t\t15:00\t기본 파서 일정 7
+\t\t\t16:00\t기본 파서 일정 8
+\t\t\t17:00\t기본 파서 일정 9`;
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "풍부한 AI 결과 테스트" });
+    const contents = result.itinerary.days.flatMap((day) => day.items.map((item) => item.content));
+
+    expect(result.diagnostics.source).toBe("ai");
+    expect(result.diagnostics.aiMeaningfulItemCount).toBe(25);
+    expect(result.diagnostics.fallbackMeaningfulItemCount).toBe(9);
+    expect(contents).toContain("AI 전용 일정 25");
+    expect(contents).not.toContain("기본 파서 일정 9");
+  });
+
+  it("uses raw tabular meals and hotels when keeping richer AI schedules", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+      const dayOneItems = [
+        { type: "TRANSFER", content: "인천 출발", time: "16:35" },
+        { type: "TRANSFER", content: "타슈켄트 도착", time: "20:40" },
+        { type: "MEAL", mealSlot: "breakfast", content: "호텔식" },
+        { type: "MEAL", mealSlot: "lunch", content: "현지식" },
+        { type: "MEAL", mealSlot: "dinner", content: "현지식" },
+        { type: "ACCOMMODATION", content: "LOTTE CITY HOTEL TASHKENT PALAE" },
+      ];
+      const dayTwoItems = [
+        { type: "SIGHTSEEING", content: "미노르 모스크" },
+        { type: "SIGHTSEEING", content: "하자티 이맘 광장" },
+        { type: "SIGHTSEEING", content: "초르수 바자르" },
+        { type: "MEAL", mealSlot: "dinner", content: "현지식" },
+        { type: "MEAL", mealSlot: "lunch", content: "현지식" },
+        { type: "ACCOMMODATION", content: "LOTTE CITY HOTEL TASHKENT PALAE" },
+      ];
+      const extraItems = Array.from({ length: 14 }, (_, index) => ({
+        type: "SIGHTSEEING",
+        content: `AI 보강 일정 ${index + 1}`,
+      }));
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: "AI 분석 결과",
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2025-03-17", end: "2025-03-18" } },
+                days: [
+                  { dayNo: 1, date: "2025-03-17", items: dayOneItems },
+                  { dayNo: 2, date: "2025-03-18", items: [...dayTwoItems, ...extraItems] },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rawText = `일자(날짜)\t도  시\t교  통\t시  간 \t일                                      정 \t\t식   사\t
+제 01일\t인천 \tOZ0573\t16:35\t인천 출발\t\t\t
+3/17(월)\t타슈켄트\t\t20:40\t타슈켄트 도착\t\t\t
+\t\t\t\t가이드 미팅 후 호텔 이동\t\t\t
+\t\t\t\t호텔투숙\t\t\t
+\t\t\t\t숙 소 : LOTTE CITY HOTEL TASHKENT PALAE 4*\t\t\t
+제 02일\t타슈켄트\t\t\t호텔 조식 후\t\t조:\t호텔식
+3/18(화)\t\t\t10:00\t가이드 미팅\t\t중:\t현지식
+\t\t\t\t미노르 모스크\t\t석:\t현지식
+\t\t\t\t숙 소 : LOTTE CITY HOTEL TASHKENT PALAE 4*\t\t\t`;
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "우즈베키스탄 테스트" });
+    const dayOne = result.itinerary.days.find((day) => day.dayNo === 1);
+    const dayTwo = result.itinerary.days.find((day) => day.dayNo === 2);
+    const dayOneMeals = dayOne?.items.filter((item) => item.type === "MEAL") ?? [];
+    const dayOneHotels = dayOne?.items.filter((item) => item.type === "ACCOMMODATION") ?? [];
+    const dayTwoMeals = dayTwo?.items.filter((item) => item.type === "MEAL") ?? [];
+    const dayTwoHotels = dayTwo?.items.filter((item) => item.type === "ACCOMMODATION") ?? [];
+
+    expect(result.diagnostics.source).toBe("ai");
+    expect(dayOneMeals).toHaveLength(0);
+    expect(dayOneHotels.map((item) => item.content)).toEqual(["LOTTE CITY HOTEL TASHKENT PALAE 4*"]);
+    expect(dayTwoMeals.map((item) => item.mealSlot)).toEqual(["breakfast", "lunch", "dinner"]);
+    expect(dayTwoMeals.map((item) => item.content)).toEqual(["호텔식", "현지식", "현지식"]);
+    expect(dayTwoHotels.map((item) => item.content)).toEqual(["LOTTE CITY HOTEL TASHKENT PALAE 4*"]);
+  });
+
+  it("salvages AI responses with nullable sections and Korean field aliases", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+1일차 | 관광 | 싱가포르 국립박물관 견학
+1일차 | 식사 | 호텔식`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                header: null,
+                overview: null,
+                basics: null,
+                일정: [
+                  {
+                    일차: "제1일",
+                    날짜: "2025.04.28",
+                    항목: [
+                      { 항목구분: "관광", 내용: "싱가포르 국립박물관 견학" },
+                      { 항목구분: "식사", 식사구분: "조식", 내용: "호텔식" },
+                    ],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({
+      rawText: "제1일 싱가포르\n싱가포르 국립박물관 견학\n조:호텔식",
+      title: "AI 응답 보정 테스트",
+    });
+    const items = result.itinerary.days[0]?.items ?? [];
+
+    expect(result.diagnostics.source).toBe("ai");
+    expect(items.find((item) => item.type === "SIGHTSEEING")?.content).toBe("싱가포르 국립박물관 견학");
+    expect(items.find((item) => item.type === "MEAL")?.meal?.breakfast).toBe("호텔식");
+  });
+
+  it("splits meal prefixes embedded in AI sightseeing and transfer content", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: { type: string };
+      };
+
+      if (!body.response_format) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+4일차 | 관광 | 석식 후 싱가포르 창이 국제공항으로 이동 및 쥬얼창이 견학 | | 20:00`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2025-04-30", end: "2025-04-30" } },
+                days: [
+                  {
+                    dayNo: 4,
+                    date: "2025-04-30",
+                    items: [
+                      {
+                        type: "SIGHTSEEING",
+                        time: "20:00",
+                        content: "석식 후 싱가포르 창이 국제공항으로 이동 및 쥬얼창이 견학",
+                      },
+                    ],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({
+      rawText: "제4일 싱가포르\n석식 후 싱가포르 창이 국제공항으로 이동 및 쥬얼창이 견학",
+      title: "싱가포르 4일차",
+    });
+    const items = result.itinerary.days[0]?.items ?? [];
+
+    expect(result.diagnostics.source).toBe("ai");
+    expect(items.find((item) => item.type === "MEAL" && item.mealSlot === "dinner")?.meal?.dinner).toBe("석식");
+    expect(items.find((item) => item.type !== "MEAL")?.content).toBe("싱가포르 창이 국제공항으로 이동 및 쥬얼창이 견학");
   });
 });

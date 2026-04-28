@@ -26,4 +26,8 @@ describe("normalizeSpreadsheetCell", () => {
     expect(normalizeSpreadsheetCell({ formula: "A1", result: "호텔식" })).toBe("호텔식");
     expect(normalizeSpreadsheetCell({ error: "#VALUE!" })).toBe("");
   });
+
+  it("normalizes JavaScript date strings emitted by spreadsheet readers", () => {
+    expect(normalizeSpreadsheetCell("Tue Mar 18 2025 00:00:00 GMT+0900 (Korean Standard Time)")).toBe("2025-03-18");
+  });
 });

@@ -36,7 +36,7 @@ interface Props {
 interface ParseApiResponse {
   itinerary?: ItineraryData;
   diagnostics?: {
-    source?: "ai" | "fallback-no-key" | "fallback-ai-error" | "fallback-quality";
+    source?: "ai" | "fallback-tabular" | "fallback-no-key" | "fallback-ai-error" | "fallback-quality";
     aiAttempted?: boolean;
     aiError?: string;
     aiMeaningfulItemCount?: number;
@@ -47,7 +47,7 @@ interface ParseApiResponse {
 }
 
 function parserDiagnosticMessage(diagnostics: ParseApiResponse["diagnostics"]): string | null {
-  if (!diagnostics || diagnostics.source === "ai") return null;
+  if (!diagnostics || diagnostics.source === "ai" || diagnostics.source === "fallback-tabular") return null;
   if (diagnostics.source === "fallback-no-key") {
     return "AI API key가 서버에 반영되지 않아 기본 파서로 불러왔습니다. dev 서버를 재시작하고 .env.local의 OPENAI_API_KEY를 확인해 주세요.";
   }
@@ -222,8 +222,15 @@ export function SearchPopup({ onClose }: Props) {
   // ── 파일 유효성 검사 ──────────────────────────────────
   function validateFile(file: File): string | null {
     const MAX_MB = 10;
+    const name = file.name.toLowerCase();
     if (file.size > MAX_MB * 1024 * 1024) {
       return `파일 크기가 ${MAX_MB}MB를 초과합니다. (${(file.size / 1024 / 1024).toFixed(1)}MB)`;
+    }
+    if (name.endsWith(".xls") && !name.endsWith(".xlsx")) {
+      return "구형 Excel(.xls)은 지원하지 않습니다. Excel에서 .xlsx로 저장한 뒤 업로드해 주세요.";
+    }
+    if (name.endsWith(".hwp") && !name.endsWith(".hwpx")) {
+      return "구형 한글(.hwp)은 아직 지원하지 않습니다. .hwpx 또는 PDF로 저장한 뒤 업로드해 주세요.";
     }
     return null;
   }
@@ -501,7 +508,7 @@ export function SearchPopup({ onClose }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv,.json,.txt"
+                accept=".xlsx,.csv,.json,.txt,.pdf,.hwpx"
                 className="hidden"
                 aria-label="파일 선택"
                 onChange={handleFileChange}
@@ -521,7 +528,7 @@ export function SearchPopup({ onClose }: Props) {
 
               {!fileName && !fileError && (
                 <p className="text-xs text-muted-foreground">
-                  지원 형식: Excel (.xlsx, .xls), CSV, JSON, TXT
+                  지원 형식: Excel (.xlsx), CSV, JSON, TXT, PDF, HWPX
                 </p>
               )}
             </div>

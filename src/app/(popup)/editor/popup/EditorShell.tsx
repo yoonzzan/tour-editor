@@ -284,15 +284,17 @@ export function EditorShell({ quoteNo, role }: Props) {
 
         <div className="flex items-center gap-2">
           {/* 일정 불러오기 버튼 */}
-          <button
-            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-            onClick={() => setShowSearch(true)}
-          >
-            일정 불러오기
-          </button>
+          {canEdit && (
+            <button
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              onClick={() => setShowSearch(true)}
+            >
+              일정 불러오기
+            </button>
+          )}
 
           {/* 항공 조회 버튼 (T-605: partner 숨김) */}
-          {role !== "PARTNER" && (
+          {canEdit && role !== "PARTNER" && (
             <button
               className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
               onClick={() => setShowFlight(true)}
@@ -424,10 +426,10 @@ export function EditorShell({ quoteNo, role }: Props) {
       </main>
 
       {/* SearchPopup 모달 */}
-      {showSearch && <SearchPopup onClose={() => setShowSearch(false)} />}
+      {canEdit && showSearch && <SearchPopup onClose={() => setShowSearch(false)} />}
 
       {/* 항공 조회 모달 (T-603) */}
-      {showFlight && (
+      {canEdit && showFlight && (
         <FlightPopup
           onClose={() => setShowFlight(false)}
           onSelect={handleFlightSelect}
@@ -449,6 +451,8 @@ export function EditorShell({ quoteNo, role }: Props) {
           latestVersion={currentVersion}
           onClose={() => setShowVersionHistory(false)}
           onPreviewVersion={(v) => {
+            setShowSearch(false);
+            setShowFlight(false);
             setPreviewReturnState({ itinerary, quote, isDirty });
             initFromVersion(v.itineraryData, v.quoteData);
             setReadonlyVersion(v);

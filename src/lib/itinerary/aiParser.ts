@@ -27,13 +27,45 @@ const MAX_INPUT_CHARS = 12000;
 const MAX_LINE_CHARS = 280;
 
 const mealSlotSchema = z.enum(["breakfast", "lunch", "dinner"]);
-const itemTypeSchema = z.enum([
+const ITEM_TYPE_VALUES = [
   "TRANSFER",
   "SIGHTSEEING",
   "MEAL",
   "ACCOMMODATION",
   "OTHER",
-]);
+] as const;
+const itemTypeSchema = z.enum(ITEM_TYPE_VALUES);
+const itemTypeSet = new Set<string>(ITEM_TYPE_VALUES);
+
+function normalizeAiItemType(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (itemTypeSet.has(normalized)) return normalized;
+
+  const compact = value.replace(/\s+/gu, "");
+  if (/^(?:이동|교통|항공|TRANSFER)$/iu.test(compact)) return "TRANSFER";
+  if (/^(?:관광|일정|방문|견학|SIGHTSEEING)$/iu.test(compact)) return "SIGHTSEEING";
+  if (/^(?:식사|MEAL)$/iu.test(compact)) return "MEAL";
+  if (/^(?:숙박|호텔|ACCOMMODATION)$/iu.test(compact)) return "ACCOMMODATION";
+  if (/^(?:기타|OTHER)$/iu.test(compact)) return "OTHER";
+  return undefined;
+}
+
+function normalizeAiMealSlot(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "breakfast" || normalized === "b" || normalized === "조" || normalized === "조식") return "breakfast";
+  if (normalized === "lunch" || normalized === "l" || normalized === "중" || normalized === "중식") return "lunch";
+  if (normalized === "dinner" || normalized === "d" || normalized === "석" || normalized === "석식") return "dinner";
+  return undefined;
+}
+
+function coerceOptionalObject<T extends z.ZodRawShape>(shape: T) {
+  return z.preprocess(
+    (value) => (value === null || value === undefined ? undefined : value),
+    z.object(shape).optional(),
+  );
+}
 
 const optionalText = z.preprocess((value) => {
   if (value === null || value === undefined) return undefined;
@@ -51,13 +83,13 @@ const optionalNumeric = z.preprocess((value) => {
 }, z.number().optional());
 
 const aiItemSchema = z.object({
-  type: z.preprocess((value) => (typeof value === "string" ? value : undefined), itemTypeSchema.optional()),
+  type: z.preprocess(normalizeAiItemType, itemTypeSchema.optional()),
   region: optionalText,
   transport: optionalText,
   time: optionalText,
   content: optionalText,
   detail: optionalText,
-  mealSlot: z.preprocess((value) => (typeof value === "string" ? value : undefined), mealSlotSchema.optional()),
+  mealSlot: z.preprocess(normalizeAiMealSlot, mealSlotSchema.optional()),
   hotel: optionalText,
 }).passthrough();
 
@@ -65,7 +97,8 @@ const aiDaySchema = z.object({
   dayNo: z.preprocess((value) => {
     if (typeof value === "number") return value;
     if (typeof value === "string") {
-      const parsed = Number(value.trim());
+      const dayToken = /(?:제)?\s*(\d{1,2})\s*일/u.exec(value)?.[1];
+      const parsed = dayToken ? Number(dayToken) : Number(value.trim());
       return Number.isFinite(parsed) ? parsed : undefined;
     }
     return undefined;
@@ -75,65 +108,49 @@ const aiDaySchema = z.object({
 }).passthrough();
 
 const aiOutputSchema = z.object({
-  header: z
-    .object({
+  header: coerceOptionalObject({
       groupName: optionalText,
       writtenAt: optionalText,
-    })
-    .optional(),
-  overview: z
-    .object({
+    }),
+  overview: coerceOptionalObject({
       recipient: optionalText,
       cities: optionalText,
-      travelPeriod: z
-        .object({
+      travelPeriod: coerceOptionalObject({
           start: optionalText,
           end: optionalText,
-        })
-        .optional(),
-      passengers: z
-        .object({
+        }),
+      passengers: coerceOptionalObject({
           adult: optionalNumeric,
           child: optionalNumeric,
           infant: optionalNumeric,
           escort: optionalNumeric,
-        })
-        .optional(),
+        }),
       singleCharge: optionalNumeric,
-      fare: z
-        .object({
+      fare: coerceOptionalObject({
           adultPerPerson: optionalNumeric,
           childPerPerson: optionalNumeric,
           infantPerPerson: optionalNumeric,
           total: optionalNumeric,
           totalWithCard: optionalNumeric,
-        })
-        .optional(),
-    })
-    .optional(),
-  basics: z
-    .object({
-      flight: z
-        .object({
+        }),
+    }),
+  basics: coerceOptionalObject({
+      flight: coerceOptionalObject({
           departure: optionalText,
           arrival: optionalText,
           localVehicle: optionalText,
-        })
-        .optional(),
-      accommodation: z
-        .object({
+        }),
+      accommodation: coerceOptionalObject({
           hotel: optionalText,
           grade: optionalText,
           occupancy: optionalText,
-        })
-        .optional(),
+        }),
       included: optionalText,
       excluded: optionalText,
       optionalTour: optionalText,
       shoppingCenters: optionalNumeric,
       notes: optionalText,
-    })
-    .optional(),
+    }),
   days: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(aiDaySchema).optional()),
 }).passthrough();
 
@@ -144,6 +161,7 @@ interface ParseWithAiInput {
 
 export type ItineraryParserSource =
   | "ai"
+  | "fallback-tabular"
   | "fallback-no-key"
   | "fallback-ai-error"
   | "fallback-quality";
@@ -206,7 +224,7 @@ function preprocessRawText(rawText: string): string {
     if (/^[=\-_*~]{3,}$/u.test(line)) continue;
 
     line = line
-      .replace(/\t+/gu, " | ")
+      .replace(/\t/gu, " | ")
       .replace(/\s+/gu, " ")
       .replace(/(\d{1,2})\s*일\s*차/gu, "$1일차");
     line = line
@@ -293,23 +311,23 @@ function normalizeOptionalDate(value: string | undefined): string {
 function fallbackType(content: string): ScheduleItemType {
   const text = content.toLowerCase();
   if (
-    /(HOTEL\s*-\s*|숙박|리조트|resort|check[-\s]?in|객실|room|\b\d+\s*박\b|호텔\s*복귀|호텔로\s*이동|호텔\s*휴식)/iu
+    /(HOTEL\s*-\s*|숙박|리조트|resort|check[-\s]?in|객실|room|\b\d+\s*박\b)/iu
       .test(content)
   ) {
     return "ACCOMMODATION";
   }
-  const hasMeal = /(조식|중식|석식|조[:：]|중[:：]|석[:：]|meal|breakfast|lunch|dinner)/u.test(content);
+  const hasMeal = /(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：]|meal|breakfast|lunch|dinner)/iu.test(content);
   const hasMovement = /(이동|항공|차량|버스|공항|flight|transfer|출발|도착|탑승|출국|출국수속|입국|입국수속|미팅|송영)/u.test(text);
   const hasActivity = /(관광|투어|체험|쇼핑|골프|관람|견학|캠퍼스|박물관|식물원|차이나타운|머라이언|유니버셜|가든스|리버원더스|야경쇼)/u.test(content);
   const mealContext = /(호텔|숙박|체크인|체크아웃|휴식|투숙)/u.test(content);
   const nonMealText = cleanText(
     content
-      .replace(/(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|meal|breakfast|lunch|dinner)/giu, "")
+      .replace(/(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：]|meal|breakfast|lunch|dinner)/giu, "")
       .replace(/[|,/()[\]·•\-\s]+/gu, " ")
   );
   if (mealContext && hasMeal && !hasMovement && !hasActivity) return "OTHER";
   if (hasMeal && !hasMovement && !hasActivity && nonMealText.length <= 8) return "MEAL";
-  if (/(이동|항공|차량|버스|공항|flight|transfer|출국|출국수속|입국|입국수속|미팅|송영)/u.test(text)) return "TRANSFER";
+  if (hasMovement) return "TRANSFER";
   if (hasActivity) return "SIGHTSEEING";
   if (hasMeal && !hasMovement && !hasActivity && nonMealText.length <= 8) return "MEAL";
   return "OTHER";
@@ -329,9 +347,10 @@ function mealSlotLabel(slot: MealSlot): string {
 }
 
 function toMealSlotByToken(token: string): MealSlot | undefined {
-  if (token === "조" || token === "조식") return "breakfast";
-  if (token === "중" || token === "중식") return "lunch";
-  if (token === "석" || token === "석식") return "dinner";
+  const normalized = cleanText(token).toLowerCase();
+  if (normalized === "조" || normalized === "조식" || normalized === "b" || normalized === "breakfast") return "breakfast";
+  if (normalized === "중" || normalized === "중식" || normalized === "l" || normalized === "lunch") return "lunch";
+  if (normalized === "석" || normalized === "석식" || normalized === "d" || normalized === "dinner") return "dinner";
   return undefined;
 }
 
@@ -339,11 +358,15 @@ function sanitizeMealText(text: string, slot: MealSlot): string {
   const cleaned = cleanText(
     text
       .replace(/\(\s*예정\s*\)|예정|후$/gu, "")
-      .replace(/^[|•·\-\s]+|[|•·\-\s]+$/gu, "")
+      .replace(/^[|•·\-:：\s]+|[|•·\-:：\s]+$/gu, "")
       .replace(/\s{2,}/gu, " ")
   );
   if (!cleaned || cleaned.length <= 1) return mealSlotLabel(slot);
   return cleaned;
+}
+
+function stripPostMealConnector(text: string): string {
+  return cleanText(text.replace(/^후(?:\s+|$)/u, ""));
 }
 
 function parseMealFromToken(
@@ -354,17 +377,20 @@ function parseMealFromToken(
     .replace(/^[·•\-\s|]+/u, "")
     .replace(/^\(\s*(\S+)\s*\)\s*/u, "$1 ");
 
-  const colonMatch = /([조중석])\s*[:：]\s*([^|]+)$/u.exec(cleaned);
+  const colonMatch = /^([조중석bld]|breakfast|lunch|dinner)\s*[:：]\s*([^|]+)$/iu.exec(cleaned);
   if (colonMatch) {
     const slot = toMealSlotByToken(colonMatch[1] ?? "");
     if (slot) return { slot, text: sanitizeMealText(colonMatch[2] ?? "", slot) };
   }
 
-  const directMatch = /^(조식|중식|석식)(?:\s*[:：]?\s*)?(.*)$/u.exec(cleaned);
+  const directMatch = /^(조식|중식|석식|breakfast|lunch|dinner)(?:\s*[:：]?\s*)?(.*)$/iu.exec(cleaned);
   if (directMatch) {
     const slot = toMealSlotByToken(directMatch[1] ?? "");
     if (!slot) return undefined;
     const rawDetail = cleanText(directMatch[2] ?? "");
+    if (/^후(?:\s+|$)/u.test(rawDetail)) {
+      return { slot, text: mealSlotLabel(slot) };
+    }
     return { slot, text: sanitizeMealText(rawDetail, slot) };
   }
 
@@ -395,6 +421,37 @@ function extractMealsFromContent(content: string): {
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
     if (!segment) continue;
+    const standaloneParsed = parseMealFromToken(segment);
+    const next = segments[index + 1];
+    if (
+      standaloneParsed &&
+      standaloneParsed.text === mealSlotLabel(standaloneParsed.slot)
+    ) {
+      const segmentRemainder = stripPostMealConnector(
+        cleanText(segment.replace(/^(조식|중식|석식|breakfast|lunch|dinner)\s*/iu, ""))
+      );
+      if (segmentRemainder && segmentRemainder !== segment) {
+        meals.push(standaloneParsed);
+        segments[index] = segmentRemainder;
+        continue;
+      }
+      const nextRemainder = next ? stripPostMealConnector(next) : "";
+      if (next && next !== nextRemainder) {
+        meals.push(standaloneParsed);
+        removeSegment(index);
+        if (nextRemainder) {
+          segments[index + 1] = nextRemainder;
+        } else {
+          removeSegment(index + 1);
+        }
+        continue;
+      }
+      if (!next) {
+        meals.push(standaloneParsed);
+        removeSegment(index);
+        continue;
+      }
+    }
     if (!/식사\s*구분/u.test(segment)) continue;
 
     const withoutPrefix = cleanText(segment.replace(/^식사\s*구분\b/u, ""));
@@ -405,9 +462,18 @@ function extractMealsFromContent(content: string): {
         continue;
       }
       removeSegment(index);
-      const next = segments[index + 1];
       if (parsed.text === mealSlotLabel(parsed.slot) && next) {
         const nextIsMeal = /^(조식|중식|석식)\b/u.test(next);
+        const nextRemainder = stripPostMealConnector(next);
+        if (next !== nextRemainder) {
+          meals.push(parsed);
+          if (nextRemainder) {
+            segments[index + 1] = nextRemainder;
+          } else {
+            removeSegment(index + 1);
+          }
+          continue;
+        }
         if (!nextIsMeal) {
           const combinedParsed = parseMealFromToken(`${mealSlotLabel(parsed.slot)} ${next}`, parsed.slot);
           if (combinedParsed) {
@@ -423,7 +489,6 @@ function extractMealsFromContent(content: string): {
       continue;
     }
 
-    const next = segments[index + 1];
     if (next) {
       const nextParsed = parseMealFromToken(next);
       if (nextParsed) {
@@ -432,6 +497,16 @@ function extractMealsFromContent(content: string): {
         const nextIsOnlySlot = nextParsed.text === mealSlotLabel(nextParsed.slot);
         const after = segments[index + 2];
         if (nextIsOnlySlot && after && !/식사\s*구분/u.test(after)) {
+          const afterRemainder = stripPostMealConnector(after);
+          if (after !== afterRemainder) {
+            meals.push(nextParsed);
+            if (afterRemainder) {
+              segments[index + 2] = afterRemainder;
+            } else {
+              removeSegment(index + 2);
+            }
+            continue;
+          }
           const slotLabel = nextParsed.slot === "breakfast" ? "조식" : nextParsed.slot === "lunch" ? "중식" : "석식";
           const withDetail = parseMealFromToken(`${slotLabel} ${after}`, nextParsed.slot);
           if (withDetail) {
@@ -448,14 +523,14 @@ function extractMealsFromContent(content: string): {
   const cleanedSegments = segments.filter((_, idx) => keepSegment[idx]);
   working = cleanedSegments.join(" | ");
 
-  const explicitMealPattern = /([조중석])\s*[:：]\s*([^|\n]+)/gu;
+  const explicitMealPattern = /(^|[\s|])([조중석bld]|breakfast|lunch|dinner)\s*[:：]\s*([^|\n]+)/giu;
   for (const match of working.matchAll(explicitMealPattern)) {
-    const slot = toMealSlotByToken(match[1] ?? "");
+    const slot = toMealSlotByToken(match[2] ?? "");
     if (!slot) continue;
-    const text = sanitizeMealText(match[2] ?? "", slot);
+    const text = sanitizeMealText(match[3] ?? "", slot);
     meals.push({ slot, text });
   }
-  working = working.replace(explicitMealPattern, "");
+  working = working.replace(explicitMealPattern, (_raw: string, prefix: string) => prefix);
 
   const parenthesizedAfterMealPattern = /(조식|중식|석식)\s*\(\s*([^)]+)\s*\)\s*후/gu;
   working = working.replace(parenthesizedAfterMealPattern, (_raw: string, token: string, detail: string) => {
@@ -608,6 +683,33 @@ function parseDayNoToken(text: string): number | undefined {
   return Number.isFinite(dayNo) && dayNo > 0 ? dayNo : undefined;
 }
 
+function extractDayNoFromScheduleLine(line: string): number | undefined {
+  const columns = splitScheduleColumnsWithTabs(line);
+  const firstValue = columns.map((column) => cleanText(column)).find(Boolean);
+  if (firstValue && /^\d{1,2}$/u.test(firstValue) && /(?:\t|\|)/u.test(line)) {
+    const dayNo = Number(firstValue);
+    if (Number.isFinite(dayNo) && dayNo > 0) return dayNo;
+  }
+  for (const column of columns) {
+    const parsed = parseDayNoToken(column);
+    if (parsed !== undefined) return parsed;
+
+    const embedded = /(?:^|\s)(?:제\s*(\d{1,2})\s*일(?:차)?|(\d{1,2})\s*일차)(?:\s|$)/u.exec(column);
+    if (embedded?.[1]) {
+      const dayNo = Number(embedded[1]);
+      if (Number.isFinite(dayNo) && dayNo > 0) return dayNo;
+    }
+    if (embedded?.[2]) {
+      const dayNo = Number(embedded[2]);
+      if (Number.isFinite(dayNo) && dayNo > 0) return dayNo;
+    }
+  }
+
+  const matched = /(?:^|[\s|])(?:제\s*(\d{1,2})\s*일(?:차)?|(\d{1,2})\s*일차)(?:[\s|]|$)/u.exec(line);
+  const dayNo = Number(matched?.[1] ?? matched?.[2] ?? "0");
+  return Number.isFinite(dayNo) && dayNo > 0 ? dayNo : undefined;
+}
+
 function compactText(value: string): string {
   return cleanText(value).replace(/\s+/gu, "");
 }
@@ -693,7 +795,7 @@ function isScheduleChromeToken(text: string): boolean {
 function isLikelyMealText(value: string): boolean {
   const compact = cleanText(value).replace(/\s+/gu, "");
   if (!compact) return false;
-  return /(?:식사\s*구분|[조중석]식|[조중석][:：]|조식|중식|석식)/u.test(compact);
+  return /(?:식사\s*구분|[조중석]식|[조중석][:：]|조식|중식|석식|\b[BLD]\s*[:：])/iu.test(compact);
 }
 
 function isEmptyMealLabel(value: string): boolean {
@@ -706,8 +808,12 @@ function mealTextScore(value: string): number {
   if (!normalized) return 0;
   if (isEmptyMealLabel(normalized)) return 0;
   let score = normalized.length;
-  if (/(?:식사\s*구분|[조중석]\s*[:：]|조식|중식|석식)/u.test(normalized)) {
+  if (/(?:식사\s*구분|[조중석]\s*[:：]|조식|중식|석식|\b[BLD]\s*[:：])/iu.test(normalized)) {
     score -= 2;
+  }
+  if (/^(?:후)(?:\s|$)/u.test(normalized) || /\s후\s/u.test(normalized)) score -= 40;
+  if (/(관광|투어|체험|쇼핑|골프|관람|견학|캠퍼스|박물관|식물원|차이나타운|머라이언|유니버셜|가든스|리버원더스|야경쇼|이동|공항|출발|도착|미팅)/u.test(normalized)) {
+    score -= 30;
   }
   if (/후$/u.test(normalized)) score -= 1;
   if (/예정$/u.test(normalized)) score -= 1;
@@ -773,8 +879,10 @@ function isDayLabelToken(text: string): boolean {
   if (parseDayNoToken(value) !== undefined) return true;
   if (/^\(?[월화수목금토일]\)?$/u.test(value)) return true;
   if (/^(?:mon|tue|wed|thu|fri|sat|sun)\b/i.test(value)) return true;
+  if (/^(?:mon|tue|wed|thu|fri|sat|sun)\s+[a-z]{3}\s+\d{1,2}\s+\d{4}\b/i.test(value)) return true;
   if (/^\d{4}[-./]\d{1,2}[-./]\d{1,2}$/u.test(value)) return true;
   if (/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/u.test(value)) return true;
+  if (/^\d{1,2}\/\d{1,2}\s*\([^)]+\)$/u.test(value)) return true;
   if (/^\d{1,2}월\d{1,2}일$/u.test(compact)) return true;
   return false;
 }
@@ -787,6 +895,7 @@ function isPlaceholderCell(value: string): boolean {
   if (/^(?:예|샘플):?/u.test(compact)) {
     return true;
   }
+  if (/^(?:https?|www)$/u.test(compact)) return true;
   if (/^예상/u.test(compact)) return true;
   if (/^\d{1,2}:\d{2}$/u.test(compact)) return true;
   if (compact === "항공" || compact === "버스" || compact === "전용버스" || compact === "차량") return true;
@@ -798,7 +907,7 @@ function isLikelyTransport(text: string): boolean {
   const value = cleanText(text);
   if (!value) return false;
   if (isPlaceholderCell(value)) return false;
-  if (/(조식|중식|석식|조[:：]|중[:：]|석[:：]|meal|breakfast|lunch|dinner)/iu.test(value)) return false;
+  if (/(조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：]|meal|breakfast|lunch|dinner)/iu.test(value)) return false;
   if (/\b(?:OZ|KE|LJ|BX|TW|ZE|RS|7C)\d{2,4}\b/u.test(value)) return true;
   if (value.length > 20) return false;
   return /^(?:전용버스|버스|항공|항공편|차량|택시|지하철|열차|페리|도보|기내)$/u.test(value)
@@ -847,7 +956,9 @@ function extractTimeToken(text: string): string {
 
 function isNoiseLine(text: string): boolean {
   if (/날\s*짜.*지\s*역.*교통편.*(세\s*부\s*일\s*정|내용)/u.test(text)) return true;
-  if (/^\*+\s*상기 일정은 .*변경/u.test(text)) return true;
+  if (/^[*♣\s]*상기 일정은 .*변경/u.test(text)) return true;
+  if (/^(?:일자\s*\(?날짜\)?|일자|날짜)$/u.test(cleanText(text))) return true;
+  if (/^\S.*\d+\s*일\s*일정표$/u.test(cleanText(text))) return true;
   if (/^(?:\d+\.)?\s*(?:TOUR\s*FEE|참고사항|포함사항|불포함사항|기타사항|견적번호|기준코드|환율|여행요금|요금|금액)/u.test(text)) return true;
   if (isScheduleChromeToken(text)) return true;
   if (/작성일|일자별\s*일정|항목추가/gu.test(text)) return true;
@@ -862,7 +973,9 @@ function parsePipeColumns(text: string): {
   content?: string;
 } {
   const rawCols = splitScheduleColumns(text);
-  if (rawCols.length < 2) return {};
+  const hasCellBoundary = /(?:\t|\|)/u.test(text);
+  if (rawCols.length === 0) return {};
+  if (rawCols.length < 2 && !hasCellBoundary) return {};
 
   const cols = [...rawCols];
   let dayNo: number | undefined;
@@ -875,6 +988,14 @@ function parsePipeColumns(text: string): {
       cols.shift();
       continue;
     }
+    if (/^\d{1,2}$/u.test(first)) {
+      const numericDayNo = Number(first);
+      if (Number.isFinite(numericDayNo) && numericDayNo > 0) {
+        dayNo = numericDayNo;
+        cols.shift();
+        continue;
+      }
+    }
     if (isDayLabelToken(first)) {
       cols.shift();
       continue;
@@ -885,13 +1006,35 @@ function parsePipeColumns(text: string): {
   if (cols.length === 0) {
     return dayNo !== undefined ? { dayNo } : {};
   }
+  if (cols.length === 1 && hasCellBoundary) {
+    const value = cleanText(cols[0] ?? "");
+    return {
+      ...(dayNo !== undefined ? { dayNo } : {}),
+      ...(
+        value &&
+        !isPlaceholderCell(value) &&
+        !isDayLabelToken(value) &&
+        !isStructuredHeaderLine(text) &&
+        !isSummaryTrailerLine(text)
+          ? { content: value }
+          : {}
+      ),
+    };
+  }
 
   let region = "";
   let transport = "";
   let detail = "";
   const values = cols
     .map((value) => cleanText(value))
-    .filter((value) => value && !isPlaceholderCell(value));
+    .filter((value, index, source) => {
+      if (!value || isPlaceholderCell(value)) return false;
+      if (isDayLabelToken(value)) return false;
+      if (/^(?:[조중석bld]|breakfast|lunch|dinner)\s*[:：]?$/iu.test(value)) return false;
+      const previous = source[index - 1] ? cleanText(source[index - 1]) : "";
+      if (/^(?:[조중석bld]|breakfast|lunch|dinner)\s*[:：]?$/iu.test(previous)) return false;
+      return true;
+    });
 
   if (values.length === 0) {
     return dayNo !== undefined ? { dayNo } : {};
@@ -1055,7 +1198,7 @@ function normalizeKey(text: string): string {
     .toLowerCase()
     .replace(/\b(?:oz|ke|lj|bx|tw|ze|rs|7c)\d{2,4}\b/gu, "")
     .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/gu, "")
-    .replace(/(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|meal|breakfast|lunch|dinner)/gu, "")
+    .replace(/(?:조식|중식|석식|[조중석]\s*[:：]|\b[BLD]\s*[:：]|meal|breakfast|lunch|dinner)/giu, "")
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
@@ -1676,32 +1819,59 @@ function isGenericAccommodationItem(item: ScheduleItem): boolean {
   const content = compactText(item.content);
   const hotel = compactText(item.hotel ?? "");
   if (hotel && hotel !== content) return false;
-  return /^(?:호텔|숙박|리조트)?(?:체크인|휴식|투숙|호텔체크인|호텔체크인후휴식|리조트투숙)$/u.test(content);
+  return /^(?:호텔|숙박|리조트)?(?:명입력|입력|체크인|휴식|투숙|호텔체크인|호텔체크인후휴식|리조트투숙)$/u.test(content);
 }
 
 function hasSameAccommodation(items: ScheduleItem[], candidate: ScheduleItem): boolean {
-  const candidateHotel = normalizeKey(candidate.hotel ?? candidate.content);
-  const candidateContent = normalizeKey(candidate.content);
+  const normalizeHotelKey = (value: string): string =>
+    normalizeKey(value)
+      .replace(/\b[1-5]\*$/u, "")
+      .replace(/\b[1-5]성급$/u, "")
+      .replace(/\b[1-5]star$/iu, "");
+  const candidateHotel = normalizeHotelKey(candidate.hotel ?? candidate.content);
+  const candidateContent = normalizeHotelKey(candidate.content);
   return items.some((item) => {
     if (item.type !== "ACCOMMODATION") return false;
-    const hotel = normalizeKey(item.hotel ?? item.content);
-    const content = normalizeKey(item.content);
+    const hotel = normalizeHotelKey(item.hotel ?? item.content);
+    const content = normalizeHotelKey(item.content);
     return Boolean(candidateHotel && hotel === candidateHotel) || Boolean(candidateContent && content === candidateContent);
   });
 }
 
 function mergeMissingAccommodationItems(primary: ItineraryData, fallback: ItineraryData): ItineraryData {
   const fallbackByDay = new Map(fallback.days.map((day) => [day.dayNo, day]));
+  const fallbackByDate = new Map(fallback.days.map((day) => [day.date, day]));
+  const fallbackDays = fallback.days;
   return {
     ...primary,
-    days: enforceAccommodationLast(
-      primary.days.map((day) => {
-        const fallbackAccommodations = fallbackByDay.get(day.dayNo)?.items.filter(
+    days: primary.days.map((day, index) => {
+        const fallbackDay = fallbackByDay.get(day.dayNo)
+          ?? fallbackByDate.get(day.date)
+          ?? fallbackDays[index];
+        const fallbackMeals = fallbackDay?.items.filter(
+          (item) => item.type === "MEAL" && item.mealSlot && isMeaningfulScheduleItem(item),
+        ) ?? [];
+        const fallbackAccommodations = fallbackDay?.items.filter(
           (item) => item.type === "ACCOMMODATION" && isMeaningfulText(item.hotel ?? item.content),
         ) ?? [];
-        if (fallbackAccommodations.length === 0) return day;
+        if (fallbackMeals.length === 0 && fallbackAccommodations.length === 0) return day;
 
         let items = [...day.items];
+        for (const fallbackItem of fallbackMeals) {
+          const existingIndex = items.findIndex(
+            (item) => item.type === "MEAL" && item.mealSlot === fallbackItem.mealSlot,
+          );
+          if (existingIndex >= 0) {
+            const existing = items[existingIndex];
+            if (existing && existing.type === "MEAL") {
+              items[existingIndex] = mergeMealItems(existing, fallbackItem);
+            }
+            continue;
+          }
+
+          items.push(fallbackItem);
+        }
+
         for (const fallbackItem of fallbackAccommodations) {
           if (hasSameAccommodation(items, fallbackItem)) continue;
 
@@ -1717,13 +1887,122 @@ function mergeMissingAccommodationItems(primary: ItineraryData, fallback: Itiner
         items = dedupeItems(normalizeMealsInItems(items));
         return { ...day, items };
       }),
-    ),
+  };
+}
+
+type RawMealOverrides = Partial<Record<MealSlot, string>>;
+
+function extractRawMealOverrides(rawText: string): Array<{ dayNo: number; meals: RawMealOverrides }> {
+  const byDay = new Map<number, RawMealOverrides>();
+  let currentDayNo = 1;
+
+  for (const line of rawText.split("\n")) {
+    const parsedDayNo = extractDayNoFromScheduleLine(line);
+    if (parsedDayNo !== undefined) currentDayNo = parsedDayNo;
+
+    const matches = Array.from(line.matchAll(/(?:^|[\s|])([조중석bld]|조식|중식|석식|breakfast|lunch|dinner)\s*[:：]\s*([^|\n]+)/giu));
+    const columnMeals: Array<{ slot: MealSlot; value: string }> = [];
+    const columns = splitScheduleColumnsWithTabs(line);
+    for (const [index, column] of columns.entries()) {
+      const markerMatch = /^([조중석bld]|조식|중식|석식|breakfast|lunch|dinner)\s*([:：])?\s*$/iu.exec(column);
+      const inlineMatch = /^([조중석bld]|조식|중식|석식|breakfast|lunch|dinner)\s*[:：]\s*(.+)$/iu.exec(column);
+      const slot = toMealSlotByToken(markerMatch?.[1] ?? inlineMatch?.[1] ?? "");
+      if (!slot) continue;
+
+      const inlineValue = cleanText(inlineMatch?.[2] ?? "");
+      const canUseNextValue = Boolean(markerMatch?.[2]) || /^[조중석bld]$/iu.test(cleanText(markerMatch?.[1] ?? ""));
+      const nextValue = canUseNextValue
+        ? columns
+            .slice(index + 1)
+            .map((value) => cleanText(value))
+            .find((value) => value && !isPlaceholderCell(value) && parseDayNoToken(value) === undefined)
+        : "";
+      const value = sanitizeMealText(inlineValue || nextValue || "", slot);
+      if (value && value !== mealSlotLabel(slot)) {
+        columnMeals.push({ slot, value });
+      }
+    }
+
+    if (matches.length === 0 && columnMeals.length === 0) continue;
+
+    const meals = byDay.get(currentDayNo) ?? {};
+    for (const match of matches) {
+      const slot = toMealSlotByToken(match[1] ?? "");
+      if (!slot) continue;
+      const value = sanitizeMealText(match[2] ?? "", slot);
+      if (value && value !== mealSlotLabel(slot)) {
+        meals[slot] = value;
+      }
+    }
+    for (const meal of columnMeals) {
+      meals[meal.slot] = meal.value;
+    }
+    byDay.set(currentDayNo, meals);
+  }
+
+  return Array.from(byDay.entries())
+    .map(([dayNo, meals]) => ({ dayNo, meals }))
+    .filter(({ meals }) => Object.keys(meals).length > 0)
+    .sort((a, b) => a.dayNo - b.dayNo);
+}
+
+function applyRawMealOverrides(
+  data: ItineraryData,
+  rawText: string,
+  opts: { allowIndexFallback?: boolean } = {},
+): ItineraryData {
+  const overrides = extractRawMealOverrides(rawText);
+  if (overrides.length === 0) return data;
+
+  const byDay = new Map(overrides.map((entry) => [entry.dayNo, entry.meals]));
+  const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
+
+  return {
+    ...data,
+    days: data.days.map((day, index) => {
+      const meals = byDay.get(day.dayNo) ?? (opts.allowIndexFallback ? overrides[index]?.meals : undefined);
+      if (!meals) return day;
+
+      let items = [...day.items];
+      for (const slot of slots) {
+        const value = meals[slot];
+        if (!value) continue;
+
+        const existingIndex = items.findIndex((item) => item.type === "MEAL" && item.mealSlot === slot);
+        if (existingIndex >= 0) {
+          const existing = items[existingIndex];
+          if (existing && existing.type === "MEAL") {
+            items[existingIndex] = {
+              ...existing,
+              content: value,
+              mealSlot: slot,
+              meal: {
+                ...(existing.meal ?? {}),
+                [slot]: value,
+              },
+            };
+          }
+          continue;
+        }
+
+        items.push({
+          id: randomUUID(),
+          type: "MEAL",
+          content: value,
+          mealSlot: slot,
+          meal: { [slot]: value },
+        });
+      }
+
+      items = dedupeItems(normalizeMealsInItems(items));
+      return { ...day, items };
+    }),
   };
 }
 
 function extractHotelNameFromLine(line: string): string {
   const direct = /\bHOTEL\s*[:：-]\s*([^|]+)/iu.exec(line)?.[1]
-    ?? /(?:호텔명|숙박호텔)\s*[:：]\s*([^|]+)/u.exec(line)?.[1];
+    ?? /(?:호텔명|숙박호텔|숙\s*소)\s*[:：]\s*([^|]+)/u.exec(line)?.[1];
   if (direct) return cleanText(direct);
 
   const columns = splitScheduleColumnsWithTabs(line);
@@ -1752,14 +2031,8 @@ function extractAccommodationItemsFromRaw(rawText: string): Map<number, Schedule
   let currentDayNo = 1;
 
   for (const line of lines) {
-    const columns = splitScheduleColumnsWithTabs(line);
-    for (const column of columns) {
-      const dayNo = parseDayNoToken(column);
-      if (dayNo !== undefined) {
-        currentDayNo = dayNo;
-        break;
-      }
-    }
+    const dayNo = extractDayNoFromScheduleLine(line);
+    if (dayNo !== undefined) currentDayNo = dayNo;
 
     const hotelName = extractHotelNameFromLine(line);
     if (!hotelName || !isMeaningfulText(hotelName)) continue;
@@ -1786,24 +2059,50 @@ function mergeRawHotelItems(itinerary: ItineraryData, rawText: string): Itinerar
 
   return {
     ...itinerary,
-    days: enforceAccommodationLast(
-      itinerary.days.map((day) => {
+    days: itinerary.days.map((day) => {
         const rawHotels = hotelByDay.get(day.dayNo) ?? [];
         if (rawHotels.length === 0) return day;
 
-        const items = [...day.items];
+        const items = day.items.filter((item) => !isGenericAccommodationItem(item));
         for (const hotel of rawHotels) {
           if (hasSameAccommodation(items, hotel)) continue;
-          const genericIndex = items.findIndex(isGenericAccommodationItem);
-          if (genericIndex >= 0) {
-            items[genericIndex] = hotel;
-          } else {
-            items.push(hotel);
-          }
+          items.push(hotel);
         }
         return { ...day, items: dedupeItems(items) };
       }),
-    ),
+  };
+}
+
+function applyAuthoritativeTabularItems(primary: ItineraryData, fallback: ItineraryData): ItineraryData {
+  const fallbackByDay = new Map(fallback.days.map((day) => [day.dayNo, day]));
+  const fallbackByDate = new Map(fallback.days.map((day) => [day.date, day]));
+  const fallbackDays = fallback.days;
+
+  return {
+    ...primary,
+    days: primary.days.map((day, index) => {
+      const fallbackDay = fallbackByDay.get(day.dayNo)
+        ?? fallbackByDate.get(day.date)
+        ?? fallbackDays[index];
+      if (!fallbackDay) return day;
+
+      const fallbackMeals = fallbackDay.items.filter((item) => item.type === "MEAL" && item.mealSlot);
+      const fallbackAccommodations = fallbackDay.items.filter((item) => item.type === "ACCOMMODATION");
+      const withoutTabularAuthority = day.items.filter((item) => {
+        if (item.type === "MEAL") return false;
+        if (item.type === "ACCOMMODATION" && fallbackAccommodations.length > 0) return false;
+        return true;
+      });
+
+      return {
+        ...day,
+        items: dedupeItems([
+          ...withoutTabularAuthority,
+          ...fallbackMeals,
+          ...fallbackAccommodations,
+        ]),
+      };
+    }),
   };
 }
 
@@ -1819,7 +2118,7 @@ function selectScheduleLines(lines: string[]): string[] {
     return truncateAtSummary(lines.slice(markerIndex + 1));
   }
 
-  const firstDayIndex = lines.findIndex((line) => parseDayNoToken(line) !== undefined);
+  const firstDayIndex = lines.findIndex((line) => extractDayNoFromScheduleLine(line) !== undefined);
   if (firstDayIndex >= 0) {
     return truncateAtSummary(lines.slice(firstDayIndex));
   }
@@ -1861,11 +2160,11 @@ function simpleActivityType(content: string): ScheduleItemType {
 
 function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
   const base = stripRegionAndTransportFromData(parseItineraryText(rawText));
-  const lines = rawText
+  const allLines = rawText
     .split("\n")
     .map((line) => cleanText(line))
-    .filter(Boolean)
-    .filter((line) => !isNoiseLine(line));
+    .filter(Boolean);
+  const lines = allLines.filter((line) => !isNoiseLine(line));
   if (lines.length === 0) return base;
 
   const scheduleLines = selectScheduleLines(lines).filter((line) => !isMetaOnlyScheduleText(line));
@@ -1908,11 +2207,12 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
   const isBareDateLine = (line: string): boolean => {
     const noPipe = !line.includes("|");
     if (!noPipe) return false;
+    if (isDayLabelToken(line) && parseDayNoToken(line) === undefined) return true;
     const compact = cleanText(line).replace(/\s+/gu, "");
     return /^(?:20\d{2}[./-]\d{1,2}[./-]\d{1,2}\.?|(?:0?[1-9]|1[0-2])[./](?:0?[1-9]|[12]\d|3[01])\.?)$/u.test(compact);
   };
   let inSummaryBlock = false;
-  const headerMap = detectScheduleHeaderFromLines(lines);
+  const headerMap = detectScheduleHeaderFromLines(allLines);
 
   const parseHeaderAlignedLine = (line: string): boolean => {
     if (!headerMap) return false;
@@ -1923,6 +2223,16 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       if (index === undefined) return "";
       const value = cleanText(columns[index] ?? "");
       return isPlaceholderCell(value) ? "" : value;
+    };
+    const valuesFrom = (index: number | undefined): string => {
+      if (index === undefined) return "";
+      return cleanText(
+        columns
+          .slice(index)
+          .map((value) => cleanText(value))
+          .filter((value) => value && !isPlaceholderCell(value))
+          .join(" | ")
+      );
     };
 
     let explicitDayNo: number | undefined;
@@ -1938,6 +2248,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
         }
       }
     }
+    explicitDayNo = explicitDayNo ?? extractDayNoFromScheduleLine(line);
     if (explicitDayNo !== undefined) {
       currentDayNo = explicitDayNo;
     }
@@ -1949,25 +2260,27 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
     }
 
     let content = valueAt(headerMap.contentIndex);
-    const detailFromColumn = valueAt(headerMap.detailIndex);
+    const detailFromColumn = valuesFrom(headerMap.detailIndex);
     if (!content && detailFromColumn) {
       content = detailFromColumn;
     }
-    if (!content) return false;
+    if (!content) return columns.length > 1;
 
     const region = valueAt(headerMap.regionIndex);
     const transport = valueAt(headerMap.transportIndex);
     const explicitTime = valueAt(headerMap.timeIndex);
     const inferredTime = explicitTime || extractTimeToken(content);
 
+    const contentLabel = cleanText(content);
+    const isHotelLabelContent = /^(?:HOTEL|호텔)$/iu.test(contentLabel);
     const { strippedContent, meals: contentMeals } = extractMealsFromContent(content);
-    content = strippedContent;
+    content = cleanText(strippedContent.replace(/\s*\|\s*$/u, ""));
     const { strippedContent: detailContent, meals: detailMeals } = detailFromColumn
       ? extractMealsFromContent(detailFromColumn)
       : { strippedContent: "", meals: [] };
 
     let finalContent = content;
-    let finalDetail = cleanText([detailContent, detailFromColumn].filter(Boolean).join(" | "));
+    let finalDetail = detailContent;
     if (isNoisyScheduleContent(finalContent) && isMeaningfulText(finalDetail)) {
       finalContent = finalDetail;
       finalDetail = "";
@@ -1977,8 +2290,6 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       finalDetail = "";
     }
 
-    const hasMeaningfulContent = finalContent && isMeaningfulText(finalContent);
-    if (!hasMeaningfulContent) return false;
     if (rowDate) {
       if (explicitDayNo !== undefined || !dayDateByNo.has(currentDayNo)) {
         dayDateByNo.set(currentDayNo, rowDate);
@@ -1992,8 +2303,13 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
     }
 
     const { strippedContent: timedContent, meals: timedMeals } = extractMealsFromContent(finalContent);
-    finalContent = timedContent;
+    finalContent = cleanText(timedContent.replace(/\s*\|\s*$/u, ""));
     const allMeals = [...contentMeals, ...detailMeals, ...timedMeals];
+    if (allMeals.length > 0 && /^(?:호텔|숙박)$/u.test(compactText(finalContent))) {
+      finalContent = "";
+    }
+    const hasMeaningfulContent = finalContent && isMeaningfulText(finalContent);
+    if (!hasMeaningfulContent && allMeals.length === 0) return false;
 
     const addDetailedItem = (payload: ScheduleItem): void => {
       pushItem(currentDayNo, payload);
@@ -2001,9 +2317,9 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
 
     if (finalContent) {
       const split = splitDirectScheduleContent(finalContent);
-      const type = fallbackType(split.content);
+      const type = isHotelLabelContent ? "ACCOMMODATION" : fallbackType(split.content);
       const mealText = type === "MEAL"
-        ? cleanText(finalContent.replace(/(?:^|\s)(?:조식|중식|석식|조[:：]|중[:：]|석[:：])\s*/u, ""))
+        ? cleanText(finalContent.replace(/(?:^|\s)(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：])\s*/iu, ""))
         : "";
 
       const item: ScheduleItem = {
@@ -2014,6 +2330,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
         ...(isLikelyRegion(region) ? { region } : {}),
         ...(transport ? { transport } : {}),
         ...(inferredTime ? { time: inferredTime } : {}),
+        ...(type === "ACCOMMODATION" ? { hotel: split.content } : {}),
       };
       addDetailedItem(item);
     }
@@ -2072,6 +2389,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       inSummaryBlock = true;
       continue;
     }
+    if (isNoiseLine(line)) continue;
     if (/^(?:인원)\s*[:：]/u.test(line)) continue;
     if (isMetaOnlyScheduleText(line)) continue;
     if (line.endsWith("일정표") && !/\d/u.test(line)) continue;
@@ -2125,7 +2443,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       continue;
     }
 
-    const directDay = parseDayNoToken(itemLine);
+    const directDay = extractDayNoFromScheduleLine(itemLine);
     if (directDay !== undefined) currentDayNo = directDay;
 
     const lineDate = parseDateFromAnyTextForFallback(itemLine);
@@ -2154,7 +2472,8 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
         .join(" | ");
       content = cleanText(rest);
     }
-    const hotelLabel = /^HOTEL\s*(?:[:：]|\|)\s*(.+)$/iu.exec(content);
+    const hotelLabel = /^HOTEL\s*(?:[:：]|\||-)\s*(.+)$/iu.exec(content);
+    const isHotelLabelLine = Boolean(hotelLabel?.[1]);
     if (hotelLabel?.[1]) {
       content = cleanText(hotelLabel[1]);
     }
@@ -2173,23 +2492,28 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
     if (!region && currentRegion) region = currentRegion;
     if (!transport && currentTransport) transport = currentTransport;
 
-    const time = cleanText(parsedColumns.time) || extractTimeToken(content);
+    const time = cleanText(parsedColumns.time) || extractTimeToken(content) || extractTimeToken(itemLine);
     if (time) {
       content = cleanText(content.replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/u, ""));
     }
 
+    const lineMeals = extractMealsFromContent(itemLine).meals;
     const { strippedContent, meals } = extractMealsFromContent(content);
-    content = strippedContent;
+    content = cleanText(strippedContent.replace(/\s*\|\s*$/u, ""));
+    const allLineMeals = [...lineMeals, ...meals];
+    if (allLineMeals.length > 0 && /^(?:호텔|숙박)$/u.test(compactText(content))) {
+      content = "";
+    }
     if (lineDate && content && !dayDateByNo.has(currentDayNo)) {
       dayDateByNo.set(currentDayNo, lineDate);
     }
 
       if (content) {
-        const split = splitDirectScheduleContent(content);
-        const type = fallbackType(split.content);
+        const split = isHotelLabelLine ? { content } : splitDirectScheduleContent(content);
+        const type = isHotelLabelLine ? "ACCOMMODATION" : fallbackType(split.content);
         const mealSlot = type === "MEAL" ? inferMealSlot(content) : undefined;
         const mealText = type === "MEAL"
-          ? cleanText(content.replace(/(?:^|\s)(?:조식|중식|석식|조[:：]|중[:：]|석[:：])\s*/u, ""))
+          ? cleanText(content.replace(/(?:^|\s)(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：])\s*/iu, ""))
           : "";
 
       const item: ScheduleItem = {
@@ -2208,7 +2532,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       pushItem(currentDayNo, item);
     }
 
-    for (const meal of meals) {
+    for (const meal of allLineMeals) {
       const mealValue = sanitizeMealText(meal.text, meal.slot);
       const mealItem: ScheduleItem = {
         id: randomUUID(),
@@ -2244,7 +2568,7 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
       ...base.overview,
       travelPeriod: period,
     },
-    days: enforceAccommodationLast(days),
+    days,
   };
   return stripRegionAndTransportFromData(
     mergeRawHotelItems(
@@ -2254,13 +2578,63 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
   );
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function firstArrayValue(record: Record<string, unknown>, keys: string[]): unknown[] | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return undefined;
+}
+
+function firstValue(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+function normalizeAiItemPayload(item: unknown): unknown {
+  if (!isUnknownRecord(item)) return item;
+  return {
+    ...item,
+    type: firstValue(item, ["type", "category", "kind", "구분", "항목구분"]) ?? item.type,
+    content: firstValue(item, ["content", "title", "name", "description", "내용", "일정"]) ?? item.content,
+    detail: firstValue(item, ["detail", "details", "상세"]) ?? item.detail,
+    mealSlot: firstValue(item, ["mealSlot", "mealType", "slot", "식사구분"]) ?? item.mealSlot,
+    hotel: firstValue(item, ["hotel", "hotelName", "숙박", "호텔명"]) ?? item.hotel,
+  };
+}
+
+function normalizeAiDayPayload(day: unknown): unknown {
+  if (!isUnknownRecord(day)) return day;
+  const items = firstArrayValue(day, ["items", "schedules", "schedule", "activities", "entries", "일정", "항목"]);
+  return {
+    ...day,
+    dayNo: firstValue(day, ["dayNo", "day", "dayNumber", "일차"]) ?? day.dayNo,
+    date: firstValue(day, ["date", "날짜", "일자"]) ?? day.date,
+    ...(items ? { items: items.map(normalizeAiItemPayload) } : {}),
+  };
+}
+
 function unwrapAiPayload(raw: unknown): unknown {
-  if (typeof raw !== "object" || raw === null) return raw;
-  const root = raw as Record<string, unknown>;
-  if (root.itinerary && typeof root.itinerary === "object") return root.itinerary;
-  if (root.data && typeof root.data === "object") return root.data;
-  if (root.result && typeof root.result === "object") return root.result;
-  return raw;
+  if (Array.isArray(raw)) return { days: raw.map(normalizeAiDayPayload) };
+  if (!isUnknownRecord(raw)) return raw;
+
+  const nested = firstValue(raw, ["itinerary", "data", "result"]);
+  if (isUnknownRecord(nested) || Array.isArray(nested)) {
+    return unwrapAiPayload(nested);
+  }
+
+  const days = firstArrayValue(raw, ["days", "itineraryDays", "dailySchedules", "schedule", "schedules", "일정"]);
+  return {
+    ...raw,
+    ...(days ? { days: days.map(normalizeAiDayPayload) } : {}),
+  };
 }
 
 function normalizeAiResult(raw: unknown, title?: string): ItineraryData {
@@ -2274,34 +2648,56 @@ function normalizeAiResult(raw: unknown, title?: string): ItineraryData {
     .map((day, index) => {
       const dayNo = day.dayNo ?? index + 1;
       const items = (day.items ?? [])
-        .map((item) => {
+        .flatMap((item) => {
           const rawContent = cleanText(item.content);
+          const extracted = extractMealsFromContent(rawContent);
+          const contentForSchedule = cleanText(extracted.strippedContent) || (
+            item.type === "MEAL" ? "" : rawContent
+          );
           const split = item.detail
-            ? { content: rawContent, detail: cleanText(item.detail) }
-            : splitStructuredScheduleContent(rawContent);
+            ? { content: contentForSchedule, detail: cleanText(item.detail) }
+            : splitStructuredScheduleContent(contentForSchedule);
           const content = split.content;
-          if (!content) return null;
-          const inferredType = fallbackType(content);
-          const rawType = item.type ?? inferredType;
-          const type = inferredType === "ACCOMMODATION" || inferredType === "MEAL"
-            ? inferredType
-            : rawType;
+          const normalizedItems: ScheduleItem[] = [];
+          const rawType = item.type ?? (content ? fallbackType(content) : "OTHER");
           const region = isLikelyRegion(item.region ?? "") ? cleanText(item.region) : "";
           const transport = isLikelyTransport(item.transport ?? "") ? cleanText(item.transport) : "";
           const time = extractTimeToken(cleanText(item.time) || content);
-          return {
-            id: randomUUID(),
-            type,
-            region,
-            transport,
-            time,
-            content,
-            detail: type === "MEAL" ? undefined : split.detail,
-            mealSlot: type === "MEAL" ? item.mealSlot ?? inferMealSlot(content) : undefined,
-            hotel: cleanText(item.hotel),
-          };
+          if (content) {
+            const inferredType = fallbackType(content);
+            const type = inferredType === "ACCOMMODATION" || inferredType === "MEAL"
+              ? inferredType
+              : rawType;
+            normalizedItems.push({
+              id: randomUUID(),
+              type,
+              region,
+              transport,
+              time,
+              content,
+              detail: type === "MEAL" ? undefined : split.detail,
+              mealSlot: type === "MEAL" ? item.mealSlot ?? inferMealSlot(content) : undefined,
+              hotel: cleanText(item.hotel),
+            });
+          }
+          for (const meal of extracted.meals) {
+            const mealValue = sanitizeMealText(meal.text, meal.slot);
+            normalizedItems.push({
+              id: randomUUID(),
+              type: "MEAL",
+              region,
+              transport,
+              ...(time ? { time } : {}),
+              content: mealValue,
+              mealSlot: meal.slot,
+              meal: { [meal.slot]: mealValue },
+            });
+          }
+          return normalizedItems;
         })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
+        .filter((item) => (
+          item.type === "MEAL" ? Boolean(item.mealSlot && item.content) : isMeaningfulScheduleItem(item)
+        ));
       if (items.length === 0) return null;
       return {
         dayNo,
@@ -2409,7 +2805,7 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
   }
   if (!config.ai.apiKey) {
     return {
-      itinerary: parseFallbackFromRaw(preprocessedText, title),
+      itinerary: applyRawMealOverrides(parseFallbackFromRaw(preprocessedText, title), preprocessedText),
       diagnostics: {
         source: "fallback-no-key",
         aiAttempted: false,
@@ -2521,14 +2917,19 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
     expectedMinimumItemCount: estimateExpectedMinimumItems(preprocessedText),
     acceptable: false,
   };
-  const fallbackResult = parseWithFallback();
+  const fallbackResult = applyRawMealOverrides(parseWithFallback(), preprocessedText);
   const fallbackQuality = evaluateParsedItineraryQuality(fallbackResult, preprocessedText);
+  const hasTabularCellBoundaries = /(?:\t|\s\|\s)/u.test(preprocessedText);
 
   try {
-    aiResult = mergeMissingAccommodationItems(await parseWithAi(), fallbackResult);
+    aiResult = applyRawMealOverrides(
+      mergeMissingAccommodationItems(await parseWithAi(), fallbackResult),
+      preprocessedText,
+      { allowIndexFallback: true },
+    );
     aiQuality = evaluateParsedItineraryQuality(aiResult, preprocessedText);
 
-    if (aiQuality.acceptable) {
+    if (aiQuality.acceptable && !hasTabularCellBoundaries) {
       return {
         itinerary: aiResult,
         diagnostics: {
@@ -2544,17 +2945,44 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
     aiResult = null;
   }
 
+  const aiIsSubstantiallyRicher = Boolean(
+    aiResult &&
+    aiQuality.meaningfulItemCount >= aiQuality.expectedMinimumItemCount &&
+    aiQuality.meaningfulItemCount > fallbackQuality.meaningfulItemCount + Math.max(3, Math.ceil(fallbackQuality.meaningfulItemCount * 0.5)),
+  );
+  if (aiResult && aiIsSubstantiallyRicher) {
+    const itinerary = hasTabularCellBoundaries
+      ? applyAuthoritativeTabularItems(aiResult, fallbackResult)
+      : applyRawMealOverrides(aiResult, preprocessedText);
+    return {
+      itinerary,
+      diagnostics: {
+        source: "ai",
+        aiAttempted: true,
+        aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
+        fallbackMeaningfulItemCount: fallbackQuality.meaningfulItemCount,
+        expectedMinimumItemCount: aiQuality.expectedMinimumItemCount,
+      },
+    };
+  }
+
   const shouldUseFallback =
     !aiResult ||
     !aiQuality.acceptable ||
+    (hasTabularCellBoundaries && fallbackQuality.acceptable) ||
     fallbackQuality.meaningfulItemCount > aiQuality.meaningfulItemCount + 1 ||
+    fallbackQuality.meaningfulItemCount >= aiQuality.expectedMinimumItemCount;
+  const tabularFallbackMeetsMinimum =
+    hasTabularCellBoundaries &&
     fallbackQuality.meaningfulItemCount >= aiQuality.expectedMinimumItemCount;
 
   if (shouldUseFallback) {
     return {
       itinerary: fallbackResult,
       diagnostics: {
-        source: aiResult ? "fallback-quality" : "fallback-ai-error",
+        source: aiResult && (hasTabularCellBoundaries && (fallbackQuality.acceptable || tabularFallbackMeetsMinimum))
+          ? "fallback-tabular"
+          : aiResult ? "fallback-quality" : "fallback-ai-error",
         aiAttempted: true,
         ...(aiError ? { aiError } : {}),
         aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
@@ -2565,7 +2993,7 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
   }
 
   return {
-    itinerary: aiResult ?? fallbackResult,
+    itinerary: applyRawMealOverrides(aiResult ?? fallbackResult, preprocessedText),
     diagnostics: {
       source: aiResult ? "ai" : "fallback-ai-error",
       aiAttempted: true,

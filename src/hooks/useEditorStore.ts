@@ -33,7 +33,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   isDirty: false,
 
   loadFromProduct: (itinerary) =>
-    set({ itinerary: enforceAccommodationPolicy(itinerary), quote: null, isDirty: false }),
+    set({ itinerary: enforceAccommodationPolicy(itinerary), isDirty: true }),
 
   setItinerary: (itinerary) =>
     set({ itinerary, isDirty: true }),

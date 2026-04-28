@@ -38,6 +38,24 @@ interface Props {
   onPreviewVersion: (version: VersionDetail) => void;
 }
 
+type ErrorResponse = {
+  error?: string;
+  message?: string;
+};
+
+async function readJsonOrThrow<T>(res: Response, fallbackMessage: string): Promise<T> {
+  if (!res.ok) {
+    let body: ErrorResponse = {};
+    try {
+      body = (await res.json()) as ErrorResponse;
+    } catch {
+      body = {};
+    }
+    throw new Error(body.message ?? body.error ?? fallbackMessage);
+  }
+  return res.json() as Promise<T>;
+}
+
 export function VersionHistory({
   quoteId,
   latestVersion,
@@ -46,12 +64,18 @@ export function VersionHistory({
 }: Props) {
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [compareVersions, setCompareVersions] = useState<string[]>([]);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // 버전 목록 조회 (T-505)
   const { data, isLoading, error } = useQuery<{ versions: VersionMeta[] }>({
     queryKey: ["versions", quoteId],
-    queryFn: () =>
-      fetch(`/api/quotes/${quoteId}/versions`).then((r) => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/quotes/${quoteId}/versions`);
+      return readJsonOrThrow<{ versions: VersionMeta[] }>(
+        res,
+        "버전 목록을 불러오지 못했습니다."
+      );
+    },
   });
 
   // 기존 변경 비교 버튼 동작 호환 + 확장 비교용 상세 조회
@@ -69,13 +93,9 @@ export function VersionHistory({
         fetch(`/api/quotes/${quoteId}/versions/${to}`),
       ]);
 
-      if (!fromRes.ok || !toRes.ok) {
-        throw new Error("버전 비교 데이터를 불러오지 못했습니다.");
-      }
-
       const [left, right] = await Promise.all([
-        fromRes.json() as Promise<VersionDetail>,
-        toRes.json() as Promise<VersionDetail>,
+        readJsonOrThrow<VersionDetail>(fromRes, "버전 비교 데이터를 불러오지 못했습니다."),
+        readJsonOrThrow<VersionDetail>(toRes, "버전 비교 데이터를 불러오지 못했습니다."),
       ]);
 
       return { left, right };
@@ -86,13 +106,19 @@ export function VersionHistory({
   async function handleVersionClick(version: VersionMeta) {
     setSelectedVersion(version.versionNo);
     setCompareVersions([]);
+    setPreviewError(null);
 
-    const res = await fetch(
-      `/api/quotes/${quoteId}/versions/${version.versionNo}`
-    );
-    if (res.ok) {
-      const detail: VersionDetail = await res.json();
+    try {
+      const res = await fetch(
+        `/api/quotes/${quoteId}/versions/${version.versionNo}`
+      );
+      const detail = await readJsonOrThrow<VersionDetail>(
+        res,
+        "버전 상세를 불러오지 못했습니다."
+      );
       onPreviewVersion(detail);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "버전 상세를 불러오지 못했습니다.");
     }
   }
 
@@ -162,7 +188,12 @@ export function VersionHistory({
           )}
           {error && (
             <p className="p-4 text-xs text-destructive" role="alert">
-              버전 목록 조회 실패
+              {error.message}
+            </p>
+          )}
+          {previewError && (
+            <p className="p-4 text-xs text-destructive" role="alert">
+              {previewError}
             </p>
           )}
           {!isLoading && versions.length === 0 && (

@@ -2,6 +2,29 @@ function sanitizeText(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
 }
 
+function normalizeJsDateString(value: string): string {
+  const matched = /^(?:mon|tue|wed|thu|fri|sat|sun)\s+([a-z]{3})\s+(\d{1,2})\s+(\d{4})\b/iu.exec(value.trim());
+  if (!matched?.[1] || !matched[2] || !matched[3]) return "";
+
+  const monthMap: Record<string, string> = {
+    jan: "01",
+    feb: "02",
+    mar: "03",
+    apr: "04",
+    may: "05",
+    jun: "06",
+    jul: "07",
+    aug: "08",
+    sep: "09",
+    oct: "10",
+    nov: "11",
+    dec: "12",
+  };
+  const month = monthMap[matched[1].toLowerCase()];
+  if (!month) return "";
+  return `${matched[3]}-${month}-${matched[2].padStart(2, "0")}`;
+}
+
 function normalizeObjectCell(value: Record<string, unknown>): string {
   const result = value.result;
   if (result !== undefined && result !== null) return normalizeSpreadsheetCell(result);
@@ -48,7 +71,8 @@ export function normalizeSpreadsheetCell(value: unknown): string {
     return normalizeObjectCell(value as Record<string, unknown>);
   }
 
-  return sanitizeText(String(value));
+  const text = sanitizeText(String(value));
+  return normalizeJsDateString(text) || text;
 }
 
 export function spreadsheetRowsToText(rows: unknown[][]): string {
