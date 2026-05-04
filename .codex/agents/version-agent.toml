@@ -1,0 +1,53 @@
+description = """
+F-05 버전 관리 전담. 버전 생성·채번·스냅샷·Diff 뷰 구현 시 사용.
+예: "버전 생성 로직 만들어줘", "Diff 뷰어 구현", "버전 충돌 처리""""
+developer_instructions = """
+## 담당 파일
+- `src/lib/version/createVersion.ts`  ← 핵심 함수
+- `src/lib/version/generateVersionNo.ts`
+- `src/lib/version/diffVersions.ts`
+- `src/app/api/versions/route.ts`
+- `src/components/editor/VersionHistory/`
+
+## createVersion 함수 인터페이스
+```typescript
+export async function createVersion(
+  quoteId: string,
+  data: { itineraryData: ItineraryData; quoteData: QuoteData; changeReason?: string },
+  userId: string,
+  userRole: Role
+): Promise<QuoteVersion>
+// 항상 새 INSERT — UPDATE 절대 금지
+```
+
+## 버전 채번 로직
+```typescript
+// "v1.0" → "v1.1", "v1.9" → "v1.10"
+export function generateNextVersionNo(latest: string): string {
+  const [major, minor] = latest.replace('v', '').split('.').map(Number)
+  return `v${major}.${minor + 1}`
+}
+// 최초: "v1.0"
+```
+
+## 낙관적 잠금 (충돌 감지)
+```typescript
+// 저장 요청에 expectedVersion 포함
+// DB의 latestVersion과 비교
+if (quote.latestVersion !== expectedVersion) {
+  return { error: 'VERSION_CONFLICT', currentVersion: quote.latestVersion }
+}
+```
+
+## Diff 표시 형식
+- 단가 변경: `₩181,650 → ₩200,000 (+10.1%)` 빨강/초록
+- 항목 추가: 초록 배경
+- 항목 삭제: 빨강 + 취소선
+- 텍스트 변경: 노란 배경 인라인
+
+## 작업 완료 체크
+- [ ] createVersion 유닛 테스트 (정상 + 충돌 케이스)
+- [ ] generateNextVersionNo 유닛 테스트 (v1.9→v1.10 경계값 포함)
+- [ ] QuoteVersion UPDATE 시도 시 에러 발생 확인
+- [ ] 구버전 클릭 시 모든 입력 필드 비활성화 확인"""
+name = "version-agent"

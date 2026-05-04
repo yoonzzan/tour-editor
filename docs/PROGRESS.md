@@ -168,7 +168,7 @@
 | 2026-04-18 | Phase 8 | T-801~T-809 완료 — 역할 API/UI 코드리뷰, E2E spec 6개(popup-init·itinerary-multi·version-create·version-readonly·excel-download·role-permissions), LCP<2초 목표 설정 |
 | 2026-04-19 | 브라우저 검증 | 미리보기 모달(일정표·견적서 탭) 브라우저 확인 완료. PreviewModal React import 버그 수정 |
 | 2026-04-20 | 최종 안정화 | typecheck 0 errors, 유닛 테스트 15/15 통과. 저장·버전이력·Excel·역할별UI·항공조회 코드 리뷰 완료. 전체 구현 100% 완료 |
-| 2026-04-20 | E2E 브라우저 검증 | 저장(v1.2→v1.3), Excel 다운로드(RFC5987 한글파일명), partner/sales 역할UI, 항공조회 팝업 5건+선택 반영 브라우저 실확인. SaveModal ✕ 버튼 type="button" 누락 버그 수정. SALES 읽기전용 — main에 pointer-events-none+opacity-75 적용. |
+| 2026-04-20 | E2E 브라우저 검증 | 저장(v1.2→v1.3), Excel 다운로드(RFC5987 한글파일명), partner/sales 역할UI, 항공조회 팝업 5건+선택 반영 브라우저 실확인. SaveModal ✕ 버튼 type="button" 누락 버그 수정. SALES 역할: 처리상태 기반 조건부 수정 가능(배정된 견적에 한해 일정/견적 조정·저장 수행) — pointer-events-none은 구버전 미리보기 전용 처리였으며 역할 자체는 읽기 전용이 아님. |
 | 2026-04-21 | E2E 안정화 | T-804/T-805 스펙 안정화(카운트 기준 보정, 저장 모달 선택자·응답 동기화). `e2e/global-setup.ts`에서 테스트 데이터 `QuoteVersion` 초기화 처리 추가. Quality Gate(`npm run quality`) 통과, `17 passed` 확인. |
 | 2026-04-24 | UI/견적 현행화 | 일정표·견적서 에디터 폭 통일, 숫자 입력 앞자리 0 정규화, 견적 자동 생성 수량 성인 인원 기준 적용, 지상비수익·하나투어수익·견적 유효기간·버전 비교 UI 문서 현행화. |
 | 2026-04-28 | PDF 파싱 보강 | 이미지형 PDF에서 텍스트 추출이 부족하면 PDF 페이지를 이미지로 렌더링해 OpenAI Vision OCR fallback을 수행하고, OCR 텍스트를 기존 AI/기본 표 파서 품질 비교에 투입하도록 문서 현행화. |

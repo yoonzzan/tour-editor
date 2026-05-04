@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/yoon/Desktop/tour-editor/.codex/hooks/pre-tool-use.sh'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write(src/**/*.ts,src/**/*.tsx)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/yoon/Desktop/tour-editor/.codex/hooks/post-write-ts.sh'",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/yoon/Desktop/tour-editor/.codex/hooks/on-stop.sh'",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}
