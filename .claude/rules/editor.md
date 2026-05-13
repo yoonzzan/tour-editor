@@ -41,6 +41,11 @@ const canViewFlights = role !== 'partner'
 - 라이브러리: `@dnd-kit/core` 만 사용 (다른 DnD 라이브러리 금지)
 - 숙박 항목: `isDraggable: false` 설정 필수
 
+## 모달·오버레이 패널
+- **다이얼로그/패널 루트**(SearchPopup, SaveModal, PreviewModal, FlightPopup, VersionHistory 등): **`shadow-popover` 클래스 사용 금지** — 어두운 스크림 위에서 `box-shadow`가 가장자리를 밝게 번지는 것처럼 보일 수 있음.
+- 대신 **`shadow-none` + `border`** 로 영역만 구분한다.
+- `tailwind.config.ts`의 `boxShadow.popover` 정의는 DESIGN 토큰 정합용으로 둘 수 있으나, **에디터·팝업 라우트 TSX**(`src/components/editor/**`, `src/app/(popup)/**`)에는 적용하지 않는다. `npm run quality`가 해당 경로에서 문자열 `shadow-popover` 사용을 검사한다.
+
 ## 품질
 - 모든 입력 필드에 `label` 또는 `aria-label` 필수
 - 에러 메시지: `role="alert"`

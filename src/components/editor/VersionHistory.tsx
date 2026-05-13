@@ -154,28 +154,29 @@ export function VersionHistory({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-end bg-black/30"
+      className="fixed inset-0 z-modal-backdrop flex items-start justify-end bg-[rgba(0,0,0,0.45)]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex h-full w-full max-w-[98vw] flex-col bg-background shadow-2xl lg:max-w-[1680px]">
-        {/* 헤더 */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-          <span className="text-sm font-semibold text-foreground">버전 이력</span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{selectedCountText}</span>
+      <div className="z-modal flex h-full w-full max-w-[98vw] flex-col overflow-hidden bg-background shadow-none lg:max-w-[1680px]">
+        <div className="flex h-8 shrink-0 items-center justify-between gap-3 bg-chrome-sidebar px-3 text-chrome-sidebar-foreground">
+          <span className="text-xs font-semibold">버전 이력</span>
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+            <span className="truncate text-[11px] text-white/80">{selectedCountText}</span>
             <button
+              type="button"
               onClick={() => setCompareVersions([])}
-              className="rounded border border-border px-2 py-1 text-[10px] text-foreground hover:bg-muted"
+              className="shrink-0 rounded-erp border border-white/25 px-2 py-0.5 text-[10px] text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
             >
               비교 초기화
             </button>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="rounded p-1 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-erp p-1 text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
           >
             ✕
           </button>

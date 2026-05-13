@@ -25,6 +25,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/u;
 const ISO_DATE_TODAY = todayInKorea();
 const MAX_INPUT_CHARS = 12000;
 const MAX_LINE_CHARS = 280;
+const AI_CONTEXT_HEAD_CHARS = 2500;
 
 const mealSlotSchema = z.enum(["breakfast", "lunch", "dinner"]);
 const ITEM_TYPE_VALUES = [
@@ -166,6 +167,36 @@ export type ItineraryParserSource =
   | "fallback-ai-error"
   | "fallback-quality";
 
+export type ItineraryParserCandidate =
+  | "ai"
+  | "deterministic-tabular"
+  | "deterministic-narrative";
+
+export interface ItineraryFieldCoverage {
+  dayCount: number;
+  datedDayCount: number;
+  meaningfulItemCount: number;
+  mealCount: number;
+  accommodationCount: number;
+  hasFlight: boolean;
+  hasVehicle: boolean;
+  hasHotelSummary: boolean;
+  hasIncluded: boolean;
+  hasExcluded: boolean;
+  hasPassengerCount: boolean;
+  hasFare: boolean;
+}
+
+export interface ItineraryCandidateScore {
+  candidate: ItineraryParserCandidate;
+  qualityScore: number;
+  acceptable: boolean;
+  fieldCoverage: ItineraryFieldCoverage;
+  meaningfulItemCount: number;
+  expectedMinimumItemCount: number;
+  suspiciousItemCount: number;
+}
+
 export interface ItineraryParseDiagnostics {
   source: ItineraryParserSource;
   aiAttempted: boolean;
@@ -173,6 +204,16 @@ export interface ItineraryParseDiagnostics {
   aiMeaningfulItemCount?: number;
   fallbackMeaningfulItemCount?: number;
   expectedMinimumItemCount?: number;
+  selectedCandidate?: ItineraryParserCandidate;
+  qualityScore?: number;
+  warnings?: string[];
+  fieldCoverage?: ItineraryFieldCoverage;
+  candidateScores?: ItineraryCandidateScore[];
+  noiseRemovedCount?: number;
+  evidenceCounts?: {
+    certain: number;
+    candidates: number;
+  };
 }
 
 export interface ItineraryParseResult {
@@ -207,7 +248,7 @@ function normalizeDateToken(line: string): string {
   );
 }
 
-function preprocessRawText(rawText: string): string {
+function preprocessRawText(rawText: string, maxChars = MAX_INPUT_CHARS): string {
   const normalizedNewLine = rawText.replace(/\uFEFF/gu, "").replace(/\r\n?/gu, "\n");
   const lines = normalizedNewLine.split("\n");
   const cleaned: string[] = [];
@@ -244,13 +285,293 @@ function preprocessRawText(rawText: string): string {
   }
 
   const merged = cleaned.join("\n").trim();
-  if (merged.length <= MAX_INPUT_CHARS) return merged;
-  return `${merged.slice(0, MAX_INPUT_CHARS)}\n...`;
+  if (!Number.isFinite(maxChars) || merged.length <= maxChars) return merged;
+  return `${merged.slice(0, maxChars)}\n...`;
 }
 
 function cleanText(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function scoreAiEvidenceLine(line: string): number {
+  const text = cleanText(line);
+  if (!text) return 0;
+  let score = 0;
+  if (/^\[sheet:/u.test(text)) score += /(일정|일정표|상세|세부|견적|호텔|식사)/u.test(text) ? 40 : 8;
+  if (extractDayNoFromScheduleLine(text) !== undefined) score += 80;
+  if (/(?:제\s*)?\d{1,2}\s*일차?|DAY\s*\d{1,2}/iu.test(text)) score += 55;
+  if (/(?:일자|날짜|지역|교통편|시간|세부\s*일정|ITINERARY|MEALS?)/iu.test(text)) score += 35;
+  if (/(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：]|breakfast|lunch|dinner)/iu.test(text)) score += 35;
+  if (/(?:HOTEL|호텔|숙소|숙박|리조트|check[-\s]?in|체크[-\s]?인)/iu.test(text)) score += 30;
+  if (/(?:항공|출발|도착|공항|전용버스|차량|가이드|포함|불포함|선택관광|쇼핑|요금|인원)/u.test(text)) score += 20;
+  if (isNoiseLine(text) || isScheduleChromeToken(text)) score -= 40;
+  return score;
+}
+
+function buildAiPromptText(preprocessedText: string): string {
+  if (preprocessedText.length <= MAX_INPUT_CHARS) return preprocessedText;
+
+  const lines = preprocessedText.split("\n");
+  const include = new Set<number>();
+  let headChars = 0;
+
+  for (let index = 0; index < lines.length && headChars < AI_CONTEXT_HEAD_CHARS; index += 1) {
+    const line = lines[index] ?? "";
+    headChars += line.length + 1;
+    if (!isNoiseLine(line)) include.add(index);
+  }
+
+  for (const [index, line] of lines.entries()) {
+    if (scoreAiEvidenceLine(line) < 30) continue;
+    include.add(index);
+    if (index > 0) include.add(index - 1);
+    if (index + 1 < lines.length) include.add(index + 1);
+  }
+
+  const selected = Array.from(include)
+    .sort((left, right) => left - right)
+    .map((index) => lines[index] ?? "")
+    .filter((line) => line.trim().length > 0);
+
+  const merged = selected.join("\n").trim();
+  if (merged.length <= MAX_INPUT_CHARS) return merged;
+  return `${merged.slice(0, MAX_INPUT_CHARS)}\n...`;
+}
+
+type ItineraryEvidenceKind =
+  | "day"
+  | "date"
+  | "meal"
+  | "hotel"
+  | "flight"
+  | "vehicle"
+  | "fare"
+  | "passenger"
+  | "schedule";
+
+interface ItineraryEvidenceItem {
+  kind: ItineraryEvidenceKind;
+  value: string;
+  sourceLine: string;
+  confidence: "certain" | "candidate";
+  dayNo?: number;
+  slot?: MealSlot;
+}
+
+interface ItineraryEvidenceSummary {
+  certain: ItineraryEvidenceItem[];
+  candidates: ItineraryEvidenceItem[];
+}
+
+const MAX_PROMPT_EVIDENCE_PER_GROUP = 80;
+const MAX_EVIDENCE_SOURCE_CHARS = 180;
+
+function truncateEvidenceValue(value: string): string {
+  const cleaned = cleanText(value).replace(/\s+/gu, " ");
+  if (cleaned.length <= MAX_EVIDENCE_SOURCE_CHARS) return cleaned;
+  return `${cleaned.slice(0, MAX_EVIDENCE_SOURCE_CHARS)}...`;
+}
+
+function addEvidenceItem(
+  summary: ItineraryEvidenceSummary,
+  seen: Set<string>,
+  item: ItineraryEvidenceItem,
+): void {
+  const value = truncateEvidenceValue(item.value);
+  const sourceLine = truncateEvidenceValue(item.sourceLine);
+  if (!value) return;
+
+  const key = [
+    item.confidence,
+    item.kind,
+    item.dayNo ?? "",
+    item.slot ?? "",
+    normalizeKey(value),
+    normalizeKey(sourceLine),
+  ].join("|");
+  if (seen.has(key)) return;
+  seen.add(key);
+
+  const target = item.confidence === "certain" ? summary.certain : summary.candidates;
+  if (target.length >= MAX_PROMPT_EVIDENCE_PER_GROUP) return;
+  target.push({
+    ...item,
+    value,
+    sourceLine,
+  });
+}
+
+function collectItineraryEvidence(rawText: string): ItineraryEvidenceSummary {
+  const summary: ItineraryEvidenceSummary = { certain: [], candidates: [] };
+  const seen = new Set<string>();
+  let currentDayNo = 1;
+
+  for (const line of rawText.split("\n")) {
+    const text = cleanText(line);
+    if (!text || isNoiseLine(text)) continue;
+
+    const parsedDayNo = extractDayNoFromScheduleLine(text);
+    if (parsedDayNo !== undefined) {
+      currentDayNo = parsedDayNo;
+      addEvidenceItem(summary, seen, {
+        kind: "day",
+        dayNo: parsedDayNo,
+        value: `${parsedDayNo}일차`,
+        sourceLine: text,
+        confidence: "certain",
+      });
+    }
+
+    const date = parseDateFromAnyText(text);
+    if (date) {
+      addEvidenceItem(summary, seen, {
+        kind: "date",
+        dayNo: currentDayNo,
+        value: date,
+        sourceLine: text,
+        confidence: "certain",
+      });
+    }
+
+    const rawMealMatches = Array.from(text.matchAll(/(?:^|[\s|])([조중석bld]|조식|중식|석식|breakfast|lunch|dinner)\s*[:：]\s*([^|\n]+)/giu));
+    for (const match of rawMealMatches) {
+      const slot = toMealSlotByToken(match[1] ?? "");
+      if (!slot) continue;
+      const value = sanitizeMealText(match[2] ?? "", slot);
+      if (!value || value === mealSlotLabel(slot)) continue;
+      addEvidenceItem(summary, seen, {
+        kind: "meal",
+        dayNo: currentDayNo,
+        slot,
+        value,
+        sourceLine: text,
+        confidence: "certain",
+      });
+    }
+
+    const columns = splitScheduleColumnsWithTabs(text);
+    for (const [index, column] of columns.entries()) {
+      const markerMatch = /^([조중석bld]|조식|중식|석식|breakfast|lunch|dinner)\s*([:：])?\s*$/iu.exec(column);
+      const slot = toMealSlotByToken(markerMatch?.[1] ?? "");
+      if (!slot) continue;
+      const nextValue = columns
+        .slice(index + 1)
+        .map((value) => cleanText(value))
+        .find((value) => value && !isPlaceholderCell(value) && parseDayNoToken(value) === undefined);
+      const value = sanitizeMealText(nextValue ?? "", slot);
+      if (!value || value === mealSlotLabel(slot)) continue;
+      addEvidenceItem(summary, seen, {
+        kind: "meal",
+        dayNo: currentDayNo,
+        slot,
+        value,
+        sourceLine: text,
+        confidence: "certain",
+      });
+    }
+
+    const hotelName = extractHotelNameFromLine(text);
+    if (hotelName) {
+      addEvidenceItem(summary, seen, {
+        kind: "hotel",
+        dayNo: currentDayNo,
+        value: hotelName,
+        sourceLine: text,
+        confidence: "certain",
+      });
+    }
+
+    const fare = parseMoneyWon(text);
+    if (fare !== undefined) {
+      addEvidenceItem(summary, seen, {
+        kind: "fare",
+        value: String(fare),
+        sourceLine: text,
+        confidence: "candidate",
+      });
+    }
+
+    const adultCount = parseCountByToken(text, "성인");
+    const childCount = parseCountByToken(text, "아동");
+    const passenger = [adultCount ? `성인 ${adultCount}` : "", childCount ? `아동 ${childCount}` : ""]
+      .filter(Boolean)
+      .join(" / ");
+    if (passenger) {
+      addEvidenceItem(summary, seen, {
+        kind: "passenger",
+        value: passenger,
+        sourceLine: text,
+        confidence: "candidate",
+      });
+    }
+
+    if (/(?:\b[A-Z]{2}\s?\d{3,4}\b|항공|공항|출국|입국|출발|도착)/u.test(text)) {
+      addEvidenceItem(summary, seen, {
+        kind: "flight",
+        dayNo: currentDayNo,
+        value: text,
+        sourceLine: text,
+        confidence: "candidate",
+      });
+    }
+
+    if (/(?:전용\s*버스|전용\s*차량|차량|버스|송영|가이드\s*미팅)/u.test(text)) {
+      addEvidenceItem(summary, seen, {
+        kind: "vehicle",
+        dayNo: currentDayNo,
+        value: text,
+        sourceLine: text,
+        confidence: "candidate",
+      });
+    }
+
+    if (
+      summary.candidates.length < MAX_PROMPT_EVIDENCE_PER_GROUP &&
+      scoreAiEvidenceLine(text) >= 50 &&
+      !isScheduleChromeToken(text)
+    ) {
+      addEvidenceItem(summary, seen, {
+        kind: "schedule",
+        dayNo: currentDayNo,
+        value: text,
+        sourceLine: text,
+        confidence: "candidate",
+      });
+    }
+  }
+
+  return summary;
+}
+
+function formatEvidenceItemForPrompt(item: ItineraryEvidenceItem): string {
+  const parts = [`kind=${item.kind}`];
+  if (item.dayNo !== undefined) parts.push(`day=${item.dayNo}`);
+  if (item.slot) parts.push(`slot=${item.slot}`);
+  parts.push(`value="${item.value}"`);
+  parts.push(`source="${item.sourceLine}"`);
+  return `- ${parts.join(" ")}`;
+}
+
+function formatEvidenceForPrompt(summary: ItineraryEvidenceSummary): string {
+  const blocks: string[] = [];
+  if (summary.certain.length > 0) {
+    blocks.push("[확정 evidence]");
+    blocks.push(...summary.certain.map(formatEvidenceItemForPrompt));
+  }
+  if (summary.candidates.length > 0) {
+    if (blocks.length > 0) blocks.push("");
+    blocks.push("[후보 evidence]");
+    blocks.push(...summary.candidates.map(formatEvidenceItemForPrompt));
+  }
+  return blocks.join("\n");
+}
+
+function countEvidenceItems(summary: ItineraryEvidenceSummary): { certain: number; candidates: number } {
+  return {
+    certain: summary.certain.length,
+    candidates: summary.candidates.length,
+  };
 }
 
 function splitDirectScheduleContent(value: string): { content: string; detail?: string } {
@@ -381,6 +702,12 @@ function parseMealFromToken(
   if (colonMatch) {
     const slot = toMealSlotByToken(colonMatch[1] ?? "");
     if (slot) return { slot, text: sanitizeMealText(colonMatch[2] ?? "", slot) };
+  }
+
+  const hyphenMatch = /^([조중석]|조식|중식|석식|breakfast|lunch|dinner)\s*[-–—]\s*([^|]+)$/iu.exec(cleaned);
+  if (hyphenMatch) {
+    const slot = toMealSlotByToken(hyphenMatch[1] ?? "");
+    if (slot) return { slot, text: sanitizeMealText(hyphenMatch[2] ?? "", slot) };
   }
 
   const directMatch = /^(조식|중식|석식|breakfast|lunch|dinner)(?:\s*[:：]?\s*)?(.*)$/iu.exec(cleaned);
@@ -1357,6 +1684,167 @@ function evaluateParsedItineraryQuality(data: ItineraryData, rawText: string): {
   return { meaningfulItemCount, expectedMinimumItemCount, acceptable: true };
 }
 
+function collectFieldCoverage(data: ItineraryData): ItineraryFieldCoverage {
+  const items = data.days.flatMap((day) => day.items);
+  return {
+    dayCount: data.days.length,
+    datedDayCount: data.days.filter((day) => DATE_RE.test(day.date)).length,
+    meaningfulItemCount: items.filter(isMeaningfulScheduleItem).length,
+    mealCount: items.filter((item) => item.type === "MEAL").length,
+    accommodationCount: items.filter((item) => item.type === "ACCOMMODATION").length,
+    hasFlight: Boolean(data.basics.flight.departure || data.basics.flight.arrival),
+    hasVehicle: Boolean(data.basics.flight.localVehicle),
+    hasHotelSummary: Boolean(data.basics.accommodation.hotel),
+    hasIncluded: Boolean(data.basics.included),
+    hasExcluded: Boolean(data.basics.excluded),
+    hasPassengerCount:
+      data.overview.passengers.adult +
+        data.overview.passengers.child +
+        data.overview.passengers.infant +
+        data.overview.passengers.escort >
+      0,
+    hasFare:
+      data.overview.fare.adultPerPerson +
+        data.overview.fare.childPerPerson +
+        data.overview.fare.infantPerPerson +
+        data.overview.fare.total >
+      0,
+  };
+}
+
+function countSuspiciousItems(data: ItineraryData): number {
+  return data.days
+    .flatMap((day) => day.items)
+    .filter((item) => isMetaOnlyScheduleText(item.content) || isSummaryTrailerLine(item.content))
+    .length;
+}
+
+function countLikelyNoiseLines(rawText: string): number {
+  return rawText
+    .split("\n")
+    .map((line) => cleanText(line))
+    .filter((line) => line && (isNoiseLine(line) || isScheduleChromeToken(line) || isMetaOnlyScheduleText(line)))
+    .length;
+}
+
+function rawTextHasMeal(rawText: string): boolean {
+  return /(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：]|MEALS?)/iu.test(rawText);
+}
+
+function rawTextHasAccommodation(rawText: string): boolean {
+  return /(?:숙박|호텔|HOTEL|리조트|resort|check[-\s]?in|체크[-\s]?인)/iu.test(rawText);
+}
+
+function scoreParsedItinerary(
+  candidate: ItineraryParserCandidate,
+  data: ItineraryData,
+  rawText: string,
+): ItineraryCandidateScore {
+  const quality = evaluateParsedItineraryQuality(data, rawText);
+  const fieldCoverage = collectFieldCoverage(data);
+  const suspiciousItemCount = countSuspiciousItems(data);
+  const visibleDayLineCount = getVisibleDayLineCount(rawText);
+  const dayTarget = Math.max(1, visibleDayLineCount || data.days.length);
+  const itemTarget = Math.max(1, quality.expectedMinimumItemCount);
+
+  const dayScore = Math.min(1, fieldCoverage.dayCount / dayTarget) * 20;
+  const dateScore = Math.min(1, fieldCoverage.datedDayCount / Math.max(1, fieldCoverage.dayCount)) * 10;
+  const itemScore = Math.min(1, fieldCoverage.meaningfulItemCount / itemTarget) * 35;
+  const mealScore = rawTextHasMeal(rawText) ? Math.min(1, fieldCoverage.mealCount / Math.max(1, fieldCoverage.dayCount)) * 10 : 10;
+  const accommodationScore = rawTextHasAccommodation(rawText)
+    ? Math.min(1, fieldCoverage.accommodationCount / Math.max(1, fieldCoverage.dayCount)) * 10
+    : 10;
+  const metadataHits = [
+    fieldCoverage.hasFlight,
+    fieldCoverage.hasVehicle,
+    fieldCoverage.hasHotelSummary,
+    fieldCoverage.hasIncluded,
+    fieldCoverage.hasExcluded,
+    fieldCoverage.hasPassengerCount,
+    fieldCoverage.hasFare,
+  ].filter(Boolean).length;
+  const metadataScore = Math.min(1, metadataHits / 4) * 10;
+  const noisePenalty = Math.min(20, suspiciousItemCount * 8);
+  const acceptanceBonus = quality.acceptable ? 5 : 0;
+  const qualityScore = Math.max(
+    0,
+    Math.min(100, Math.round(dayScore + dateScore + itemScore + mealScore + accommodationScore + metadataScore + acceptanceBonus - noisePenalty)),
+  );
+
+  return {
+    candidate,
+    qualityScore,
+    acceptable: quality.acceptable,
+    fieldCoverage,
+    meaningfulItemCount: quality.meaningfulItemCount,
+    expectedMinimumItemCount: quality.expectedMinimumItemCount,
+    suspiciousItemCount,
+  };
+}
+
+function buildParserWarnings(
+  source: ItineraryParserSource,
+  score: ItineraryCandidateScore,
+  rawText: string,
+  aiError?: string,
+): string[] {
+  const warnings: string[] = [];
+  const visibleDayLineCount = getVisibleDayLineCount(rawText);
+
+  if (score.qualityScore < 70) {
+    warnings.push(`파싱 품질 점수가 낮습니다 (${score.qualityScore}/100). 일정 반영 후 주요 항목을 확인해 주세요.`);
+  }
+  if (visibleDayLineCount > 1 && score.fieldCoverage.dayCount < visibleDayLineCount) {
+    warnings.push(`원문에는 ${visibleDayLineCount}개 일차가 보이지만 ${score.fieldCoverage.dayCount}개 일차만 추출됐습니다.`);
+  }
+  if (rawTextHasMeal(rawText) && score.fieldCoverage.mealCount === 0) {
+    warnings.push("원문에 식사 정보가 보이지만 조식/중식/석식 항목을 추출하지 못했습니다.");
+  }
+  if (rawTextHasAccommodation(rawText) && score.fieldCoverage.accommodationCount === 0) {
+    warnings.push("원문에 호텔/숙박 정보가 보이지만 숙박 항목을 추출하지 못했습니다.");
+  }
+  if (score.suspiciousItemCount > 0) {
+    warnings.push(`일정이 아닌 메타/요금/푸터성 문구가 ${score.suspiciousItemCount}개 섞였을 수 있습니다.`);
+  }
+  if (source === "fallback-ai-error" && aiError) {
+    warnings.push(`AI 파서 호출 실패로 기본 파서를 사용했습니다: ${aiError}`);
+  }
+  if (source === "fallback-quality") {
+    warnings.push("AI 결과가 품질 기준을 통과하지 못해 기본 파서 결과를 사용했습니다.");
+  }
+  if (source === "fallback-tabular") {
+    warnings.push("표 구조 원문으로 판단되어 표 파서 결과를 우선 사용했습니다.");
+  }
+
+  return warnings;
+}
+
+function withDiagnosticsQuality(
+  diagnostics: ItineraryParseDiagnostics,
+  itinerary: ItineraryData,
+  rawText: string,
+  selectedCandidate: ItineraryParserCandidate,
+  candidateScores: ItineraryCandidateScore[],
+): ItineraryParseResult {
+  const selectedScore =
+    candidateScores.find((score) => score.candidate === selectedCandidate) ??
+    scoreParsedItinerary(selectedCandidate, itinerary, rawText);
+  const warnings = buildParserWarnings(diagnostics.source, selectedScore, rawText, diagnostics.aiError);
+
+  return {
+    itinerary,
+    diagnostics: {
+      ...diagnostics,
+      selectedCandidate,
+      qualityScore: selectedScore.qualityScore,
+      warnings,
+      fieldCoverage: selectedScore.fieldCoverage,
+      candidateScores,
+      noiseRemovedCount: countLikelyNoiseLines(rawText),
+    },
+  };
+}
+
 function parseDateFromAnyText(text: string): string {
   const normalized = normalizeDateToken(text);
   const direct = /\b(20\d{2}-\d{2}-\d{2})\b/u.exec(normalized)?.[1];
@@ -1986,6 +2474,65 @@ function mergeMissingAccommodationItems(primary: ItineraryData, fallback: Itiner
   };
 }
 
+function isEvidenceItemCandidate(item: ScheduleItem): boolean {
+  if (!isMeaningfulScheduleItem(item)) return false;
+  if (isMetaOnlyScheduleText(item.content) || isSummaryTrailerLine(item.content)) return false;
+  if (isNoisyScheduleContent(item.content)) return false;
+  return true;
+}
+
+function hasSimilarEvidenceItem(items: ScheduleItem[], candidate: ScheduleItem): boolean {
+  const candidateKey = normalizeKey(candidate.content);
+  const candidateHotel = normalizeKey(candidate.hotel ?? candidate.content);
+  return items.some((item) => {
+    if (item.type === "MEAL" && candidate.type === "MEAL") {
+      return item.mealSlot === candidate.mealSlot;
+    }
+    if (item.type === "ACCOMMODATION" && candidate.type === "ACCOMMODATION") {
+      return hasSameAccommodation([item], candidate);
+    }
+    if (item.type !== candidate.type) return false;
+    const itemKey = normalizeKey(item.content);
+    const itemHotel = normalizeKey(item.hotel ?? item.content);
+    if (candidateKey && itemKey && (candidateKey === itemKey || itemKey.includes(candidateKey) || candidateKey.includes(itemKey))) {
+      return true;
+    }
+    return Boolean(candidateHotel && itemHotel && candidateHotel === itemHotel);
+  });
+}
+
+function mergeMissingEvidenceItems(primary: ItineraryData, evidence: ItineraryData): ItineraryData {
+  const evidenceByDay = new Map(evidence.days.map((day) => [day.dayNo, day]));
+  const evidenceByDate = new Map(evidence.days.map((day) => [day.date, day]));
+  const evidenceDays = evidence.days;
+
+  return {
+    ...primary,
+    days: primary.days.map((day, index) => {
+      const evidenceDay = evidenceByDay.get(day.dayNo)
+        ?? evidenceByDate.get(day.date)
+        ?? evidenceDays[index];
+      const evidenceItems = evidenceDay?.items.filter((item) =>
+        (item.type === "MEAL" || item.type === "ACCOMMODATION") && isEvidenceItemCandidate(item)
+      ) ?? [];
+      if (evidenceItems.length === 0) return day;
+
+      const items = [...day.items];
+      for (const evidenceItem of evidenceItems) {
+        if (hasSimilarEvidenceItem(items, evidenceItem)) continue;
+        items.push(evidenceItem);
+      }
+
+      return {
+        ...day,
+        items: dedupeItems(normalizeMealsInItems(items.filter((item) => item.type !== "ACCOMMODATION"))).concat(
+          dedupeItems(normalizeMealsInItems(items.filter((item) => item.type === "ACCOMMODATION"))),
+        ),
+      };
+    }),
+  };
+}
+
 type RawMealOverrides = Partial<Record<MealSlot, string>>;
 
 function extractRawMealOverrides(rawText: string): Array<{ dayNo: number; meals: RawMealOverrides }> {
@@ -2208,13 +2755,16 @@ function selectScheduleLines(lines: string[]): string[] {
     return summaryIndex >= 0 ? source.slice(0, summaryIndex) : source;
   };
   const markerIndex = lines.findIndex((line) =>
-    /^\[?\s*(?:간단일정|상세일정|일자별\s*일정|일정표?)\s*\]?$/u.test(cleanText(line))
+    /(?:^|[\s|])(?:\d+\.\s*)?\[?\s*(?:간단일정|간략\s*일정|상세일정|일자별\s*일정|일정표)\s*\]?\s*[:：]?(?:$|[\s|])/u
+      .test(cleanText(line))
   );
   if (markerIndex >= 0) {
     return truncateAtSummary(lines.slice(markerIndex + 1));
   }
 
-  const firstDayIndex = lines.findIndex((line) => extractDayNoFromScheduleLine(line) !== undefined);
+  const firstDayIndex = lines.findIndex((line) =>
+    extractDayNoFromScheduleLine(line) !== undefined || parseSimpleDayScheduleLine(line) !== undefined
+  );
   if (firstDayIndex >= 0) {
     return truncateAtSummary(lines.slice(firstDayIndex));
   }
@@ -2224,10 +2774,14 @@ function selectScheduleLines(lines: string[]): string[] {
 
 function parseSimpleDayScheduleLine(line: string): { dayNo: number; body: string } | undefined {
   const matched = /^\s*(?:제\s*)?(\d{1,2})\s*일차\s*[:：-]\s*(.+)$/u.exec(line);
-  if (!matched?.[1]) return undefined;
-  const dayNo = Number(matched[1]);
+  const embeddedDayMatch = /(?:^|[\s|])(?:D|DAY)\s*(\d{1,2})\s*[:：]\s*(.+)$/iu.exec(line);
+  const dayNoText = matched?.[1] ?? embeddedDayMatch?.[1];
+  if (!dayNoText) return undefined;
+  const dayNo = Number(dayNoText);
   if (!Number.isFinite(dayNo) || dayNo <= 0) return undefined;
-  return { dayNo, body: cleanText(matched[2] ?? "") };
+  const rawBody = matched?.[2] ?? embeddedDayMatch?.[2] ?? "";
+  const body = cleanText(rawBody.split(/\s+\|\s+/u)[0] ?? rawBody);
+  return { dayNo, body };
 }
 
 function splitSimpleList(value: string): string[] {
@@ -2247,11 +2801,77 @@ function mealSlotFromSimpleIndex(index: number, total: number): MealSlot {
   return "dinner";
 }
 
+function splitExplicitSimpleSchedule(body: string): {
+  activities: string[];
+  meals: Array<{ slot: MealSlot; text: string }>;
+} | null {
+  const segments = body
+    .split(/\s*\/\s*/u)
+    .map((entry) => cleanText(entry))
+    .filter(Boolean);
+  const meals: Array<{ slot: MealSlot; text: string }> = [];
+  const activities: string[] = [];
+
+  for (const segment of segments) {
+    const parsedMeal = parseMealFromToken(segment);
+    if (parsedMeal) {
+      meals.push(parsedMeal);
+      continue;
+    }
+    activities.push(segment);
+  }
+
+  if (meals.length === 0) return null;
+  return { activities, meals };
+}
+
 function simpleActivityType(content: string): ScheduleItemType {
   if (/(숙박|투숙|리조트|호텔|체크인|체크아웃)/u.test(content)) return "ACCOMMODATION";
   if (/(도착|출발|이동|공항)/u.test(content)) return "TRANSFER";
   if (/(자유일정|불포함)/u.test(content)) return "OTHER";
   return "SIGHTSEEING";
+}
+
+function directTypedScheduleItem(line: string): ScheduleItem | null {
+  const matched = /^(이동|관광|식사|숙박|기타)\s*\|\s*(.+)$/u.exec(line);
+  if (!matched?.[1] || !matched[2]) return null;
+
+  const label = matched[1];
+  const body = cleanText(matched[2]);
+  const time = /(?:^|\|)\s*시간\s*=\s*([^|]+)/u.exec(body)?.[1];
+  const content = cleanText(body.replace(/(?:^|\|)\s*시간\s*=\s*[^|]+/gu, "").replace(/^\|/u, ""));
+  if (!content) return null;
+
+  if (label === "식사") {
+    const parsedMeal = parseMealFromToken(content);
+    const slot = parsedMeal?.slot ?? inferMealSlot(content);
+    const mealValue = slot ? sanitizeMealText(parsedMeal?.text ?? content, slot) : content;
+    return {
+      id: randomUUID(),
+      type: "MEAL",
+      content: mealValue,
+      ...(time ? { time: cleanText(time) } : {}),
+      ...(slot ? { mealSlot: slot, meal: { [slot]: mealValue } } : {}),
+    };
+  }
+
+  const type: ScheduleItemType =
+    label === "이동"
+      ? "TRANSFER"
+      : label === "관광"
+        ? "SIGHTSEEING"
+        : label === "숙박"
+          ? "ACCOMMODATION"
+          : "OTHER";
+  const split = splitDirectScheduleContent(content);
+  return {
+    id: randomUUID(),
+    type,
+    content: split.content,
+    ...(split.detail ? { detail: split.detail } : {}),
+    ...(time ? { time: cleanText(time) } : {}),
+    ...(type === "ACCOMMODATION" ? { hotel: split.content } : {}),
+  };
 }
 
 function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
@@ -2487,7 +3107,9 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
     }
     if (isNoiseLine(line)) continue;
     if (/^(?:인원)\s*[:：]/u.test(line)) continue;
-    if (isMetaOnlyScheduleText(line)) continue;
+    const itemLine = line.replace(/^[-•·*]\s*/u, "");
+    const directTypedItem = directTypedScheduleItem(itemLine);
+    if (isMetaOnlyScheduleText(line) && !directTypedItem) continue;
     if (line.endsWith("일정표") && !/\d/u.test(line)) continue;
     if (isScheduleChromeToken(line)) continue;
     if (/^(?:항목추가|작성일자?|일정별|일자별|교통표|일정명|수정일)\s*[:：]?\s*$/u.test(line)) continue;
@@ -2500,14 +3122,19 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
     }
     if (!line.includes("|") && /일정표$/u.test(line)) continue;
 
-    const itemLine = line.replace(/^[-•·*]\s*/u, "");
-    if (parseHeaderAlignedLine(itemLine)) continue;
+    if (directTypedItem) {
+      pushItem(currentDayNo, directTypedItem);
+      continue;
+    }
 
     const simpleDay = parseSimpleDayScheduleLine(itemLine);
     if (simpleDay) {
       currentDayNo = simpleDay.dayNo;
-      const [activityPartRaw = "", mealPartRaw = ""] = simpleDay.body.split(/\s*\/\s*/u);
-      const activities = splitSimpleList(activityPartRaw);
+      const explicitSchedule = splitExplicitSimpleSchedule(simpleDay.body);
+      const [activityPartRaw = "", mealPartRaw = ""] = explicitSchedule
+        ? [explicitSchedule.activities.join(", "), ""]
+        : simpleDay.body.split(/\s*\/\s*/u);
+      const activities = explicitSchedule?.activities ?? splitSimpleList(activityPartRaw);
       for (const activity of activities) {
         if (!isMeaningfulText(activity)) continue;
         const split = splitDirectScheduleContent(activity);
@@ -2522,22 +3149,29 @@ function parseFallbackFromRaw(rawText: string, title?: string): ItineraryData {
         pushItem(currentDayNo, item);
       }
 
-      const meals = splitSimpleList(mealPartRaw).filter((meal) => meal !== "불포함");
-      meals.forEach((meal, index) => {
-        const parsedMeal = parseMealFromToken(meal);
-        const slot = parsedMeal?.slot ?? mealSlotFromSimpleIndex(index, meals.length);
-        const mealValue = sanitizeMealText(parsedMeal?.text ?? meal, slot);
+      const meals = explicitSchedule?.meals
+        ?? splitSimpleList(mealPartRaw)
+          .filter((meal) => meal !== "불포함")
+          .map((meal, index, source) => {
+            const parsedMeal = parseMealFromToken(meal);
+            const slot = parsedMeal?.slot ?? mealSlotFromSimpleIndex(index, source.length);
+            return { slot, text: parsedMeal?.text ?? meal };
+          });
+      meals.forEach((meal) => {
+        const mealValue = sanitizeMealText(meal.text, meal.slot);
         const mealItem: ScheduleItem = {
           id: randomUUID(),
           type: "MEAL",
           content: mealValue,
-          mealSlot: slot,
-          meal: { [slot]: mealValue },
+          mealSlot: meal.slot,
+          meal: { [meal.slot]: mealValue },
         };
         pushItem(currentDayNo, mealItem);
       });
       continue;
     }
+
+    if (parseHeaderAlignedLine(itemLine)) continue;
 
     const directDay = extractDayNoFromScheduleLine(itemLine);
     if (directDay !== undefined) currentDayNo = directDay;
@@ -2911,18 +3545,28 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
   if (!rawText.trim()) {
     throw new Error("파싱할 텍스트가 비어 있습니다.");
   }
-  const preprocessedText = preprocessRawText(rawText);
+  const preprocessedText = preprocessRawText(rawText, Number.POSITIVE_INFINITY);
   if (!preprocessedText.trim()) {
     throw new Error("전처리 후 파싱 가능한 텍스트가 없습니다.");
   }
+  const aiPromptText = buildAiPromptText(preprocessedText);
+  const evidenceSummary = collectItineraryEvidence(preprocessedText);
+  const evidenceText = formatEvidenceForPrompt(evidenceSummary);
+  const evidenceCounts = countEvidenceItems(evidenceSummary);
   if (!config.ai.apiKey) {
-    return {
-      itinerary: applyRawMealOverrides(parseFallbackFromRaw(preprocessedText, title), preprocessedText),
-      diagnostics: {
+    const itinerary = applyRawMealOverrides(parseFallbackFromRaw(preprocessedText, title), preprocessedText);
+    const candidateScore = scoreParsedItinerary("deterministic-narrative", itinerary, preprocessedText);
+    return withDiagnosticsQuality(
+      {
         source: "fallback-no-key",
         aiAttempted: false,
+        evidenceCounts,
       },
-    };
+      itinerary,
+      preprocessedText,
+      "deterministic-narrative",
+      [candidateScore],
+    );
   }
   const parseWithAi = async (): Promise<ItineraryData> => {
     const callAi = async (
@@ -2971,7 +3615,7 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
       },
       {
         role: "user",
-        content: buildAnalysisUserPrompt(title, preprocessedText),
+        content: buildAnalysisUserPrompt(title, aiPromptText, evidenceText),
       },
     ];
 
@@ -3032,25 +3676,38 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
   const fallbackResult = applyRawMealOverrides(parseWithFallback(), preprocessedText);
   const fallbackQuality = evaluateParsedItineraryQuality(fallbackResult, preprocessedText);
   const hasTabularCellBoundaries = /(?:\t|\s\|\s)/u.test(preprocessedText);
+  const fallbackCandidate: ItineraryParserCandidate = hasTabularCellBoundaries
+    ? "deterministic-tabular"
+    : "deterministic-narrative";
+  const fallbackScore = scoreParsedItinerary(fallbackCandidate, fallbackResult, preprocessedText);
+  const candidateScores: ItineraryCandidateScore[] = [fallbackScore];
 
   try {
     aiResult = applyRawMealOverrides(
-      mergeMissingAccommodationItems(await parseWithAi(), fallbackResult),
+      mergeMissingEvidenceItems(
+        mergeMissingAccommodationItems(await parseWithAi(), fallbackResult),
+        fallbackResult,
+      ),
       preprocessedText,
       { allowIndexFallback: true },
     );
     aiQuality = evaluateParsedItineraryQuality(aiResult, preprocessedText);
+    candidateScores.push(scoreParsedItinerary("ai", aiResult, preprocessedText));
 
     if (aiQuality.acceptable && !hasTabularCellBoundaries) {
-      return {
-        itinerary: aiResult,
-        diagnostics: {
+      return withDiagnosticsQuality(
+        {
           source: "ai",
           aiAttempted: true,
           aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
           expectedMinimumItemCount: aiQuality.expectedMinimumItemCount,
+          evidenceCounts,
         },
-      };
+        aiResult,
+        preprocessedText,
+        "ai",
+        candidateScores,
+      );
     }
   } catch (error) {
     aiError = errorMessage(error);
@@ -3066,16 +3723,21 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
     const itinerary = hasTabularCellBoundaries
       ? applyAuthoritativeTabularItems(aiResult, fallbackResult)
       : applyRawMealOverrides(aiResult, preprocessedText);
-    return {
-      itinerary,
-      diagnostics: {
+    const selectedScore = scoreParsedItinerary("ai", itinerary, preprocessedText);
+    return withDiagnosticsQuality(
+      {
         source: "ai",
         aiAttempted: true,
         aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
         fallbackMeaningfulItemCount: fallbackQuality.meaningfulItemCount,
         expectedMinimumItemCount: aiQuality.expectedMinimumItemCount,
+        evidenceCounts,
       },
-    };
+      itinerary,
+      preprocessedText,
+      "ai",
+      [...candidateScores.filter((score) => score.candidate !== "ai"), selectedScore],
+    );
   }
 
   const shouldUseFallback =
@@ -3090,9 +3752,9 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
 
   if (shouldUseFallback) {
     const itinerary = aiResult ? mergeNonScheduleData(fallbackResult, aiResult) : fallbackResult;
-    return {
-      itinerary,
-      diagnostics: {
+    const selectedScore = scoreParsedItinerary(fallbackCandidate, itinerary, preprocessedText);
+    return withDiagnosticsQuality(
+      {
         source: aiResult && (hasTabularCellBoundaries && (fallbackQuality.acceptable || tabularFallbackMeetsMinimum))
           ? "fallback-tabular"
           : aiResult ? "fallback-quality" : "fallback-ai-error",
@@ -3101,21 +3763,39 @@ export async function parseItineraryWithDiagnostics({ rawText, title }: ParseWit
         aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
         fallbackMeaningfulItemCount: fallbackQuality.meaningfulItemCount,
         expectedMinimumItemCount: aiQuality.expectedMinimumItemCount,
+        evidenceCounts,
       },
-    };
+      itinerary,
+      preprocessedText,
+      fallbackCandidate,
+      [
+        ...candidateScores.filter((score) => score.candidate !== fallbackCandidate),
+        selectedScore,
+      ],
+    );
   }
 
-  return {
-    itinerary: applyRawMealOverrides(aiResult ?? fallbackResult, preprocessedText),
-    diagnostics: {
+  const itinerary = applyRawMealOverrides(aiResult ?? fallbackResult, preprocessedText);
+  const selectedCandidate: ItineraryParserCandidate = aiResult ? "ai" : fallbackCandidate;
+  const selectedScore = scoreParsedItinerary(selectedCandidate, itinerary, preprocessedText);
+  return withDiagnosticsQuality(
+    {
       source: aiResult ? "ai" : "fallback-ai-error",
       aiAttempted: true,
       ...(aiError ? { aiError } : {}),
       aiMeaningfulItemCount: aiQuality.meaningfulItemCount,
       fallbackMeaningfulItemCount: fallbackQuality.meaningfulItemCount,
       expectedMinimumItemCount: aiQuality.expectedMinimumItemCount,
+      evidenceCounts,
     },
-  };
+    itinerary,
+    preprocessedText,
+    selectedCandidate,
+    [
+      ...candidateScores.filter((score) => score.candidate !== selectedCandidate),
+      selectedScore,
+    ],
+  );
 }
 
 export async function parseItineraryByAi(input: ParseWithAiInput): Promise<ItineraryData> {

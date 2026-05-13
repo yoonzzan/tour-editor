@@ -14,15 +14,7 @@ import {
   getQuoteExchangeRates,
 } from "@/lib/quote/currency";
 
-const PREVIEW_STYLE = {
-  brand: "#5E27A5",
-  mutedBg: "#F3E8FF",
-  categoryBg: "#FFF3E8FF",
-  detailBg: "#FFF9FAFB",
-  border: "#D1D5DB",
-};
-
-const PREVIEW_DOCUMENT_CLASS = "mx-auto max-w-6xl space-y-6 px-6 py-6";
+const PREVIEW_DOCUMENT_CLASS = "w-full space-y-6 px-6 py-6";
 const PREVIEW_WIDE_TABLE_CLASS = "min-w-[1080px] w-full table-fixed text-xs";
 
 type PreviewTab = "itinerary" | "quote";
@@ -85,56 +77,65 @@ export function PreviewModal({ onClose, quoteId }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-[rgba(0,0,0,0.45)]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex h-[90vh] w-[94vw] max-w-7xl flex-col rounded-xl bg-background shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <span className="text-sm font-semibold text-foreground">미리보기</span>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="z-modal flex h-[90vh] w-[94vw] max-w-[1600px] flex-col overflow-hidden rounded-md border border-border bg-background shadow-none"
+      >
+        <div className="grid h-8 shrink-0 grid-cols-[minmax(0,auto)_1fr_minmax(0,auto)] items-center gap-2 bg-chrome-sidebar px-2 text-chrome-sidebar-foreground">
+          <span className="px-1 text-xs font-semibold">미리보기</span>
 
-          <div className="flex gap-1 rounded-md bg-muted p-0.5">
-            <TabButton
-              active={activeTab === "itinerary"}
-              onClick={() => setActiveTab("itinerary")}
-              label="일정표"
-            />
-            <TabButton
-              active={activeTab === "quote"}
-              onClick={() => setActiveTab("quote")}
-              label="견적서"
-            />
+          <div className="flex justify-center">
+            <div className="inline-flex gap-0.5 rounded-md bg-white/10 p-0.5">
+              <TabButton
+                active={activeTab === "itinerary"}
+                onClick={() => setActiveTab("itinerary")}
+                label="일정표"
+              />
+              <TabButton
+                active={activeTab === "quote"}
+                onClick={() => setActiveTab("quote")}
+                label="견적서"
+              />
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 pe-1">
             {quoteId && (
               <>
                 <button
+                  type="button"
                   onClick={() => handleDownload("itinerary")}
-                  className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                  className="h-7 rounded-erp border border-white/25 bg-transparent px-2 text-[11px] font-medium text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
                 >
                   일정표 Excel
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleDownload("cost")}
-                  className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                  className="h-7 rounded-erp border border-white/25 bg-transparent px-2 text-[11px] font-medium text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
                 >
                   견적서 Excel
                 </button>
               </>
             )}
             <button
+              type="button"
               onClick={onClose}
               aria-label="미리보기 닫기"
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="h-7 rounded-erp px-2 text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
             >
               ✕
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           {activeTab === "itinerary" ? (
             <ItineraryPreview itinerary={itinerary} />
           ) : (
@@ -159,11 +160,12 @@ function TabButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+      className={`rounded-sm px-3 py-1 text-[11px] font-medium transition-colors ${
         active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
+          ? "bg-primary text-primary-foreground"
+          : "text-white/85 hover:text-white"
       }`}
     >
       {label}
@@ -278,7 +280,7 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
         title={itinerary.header.groupName || overview.cities || "일정표"}
       />
 
-      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB] text-[11px]">
+      <div className="overflow-x-auto rounded-lg border border-grid-border text-[11px]">
         <table className={`${PREVIEW_WIDE_TABLE_CLASS} border-collapse`}>
           <colgroup>
             <col className="w-[9%]" />
@@ -294,103 +296,103 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
           </colgroup>
           <tbody>
             <tr>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 수신
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={3}>
+              <td className="border border-grid-border px-2 py-1" colSpan={3}>
                 {overview.recipient}
               </td>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 여행도시
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+              <td className="border border-grid-border px-2 py-1" colSpan={2}>
                 {overview.cities}
               </td>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 여행기간
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+              <td className="border border-grid-border px-2 py-1" colSpan={2}>
                 {travelPeriod}
               </td>
             </tr>
             <tr>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 인원
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={3}>
+              <td className="border border-grid-border px-2 py-1" colSpan={3}>
                 {formatPassenger(pax)}
               </td>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 인솔자
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>{pax.escort}명</td>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <td className="border border-grid-border px-2 py-1" colSpan={2}>{pax.escort}명</td>
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 1인실 이용금액
               </th>
-              <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+              <td className="border border-grid-border px-2 py-1" colSpan={2}>
                 {occupancy}
               </td>
             </tr>
             <tr>
               <th
-                className="whitespace-nowrap border border-[#D1D5DB] border-l-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white"
+                className="whitespace-nowrap border border-grid-border border-l-0 bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground"
                 rowSpan={2}
               >
                 여행 요금
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 성인 인당
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 아동 인당
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 유아 인당
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={3}>
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground" colSpan={3}>
                 총 금액
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={3}>
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground" colSpan={3}>
                 카드 결제 시 금액
               </th>
             </tr>
             <tr>
-              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareAdult}</td>
-              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareChild}</td>
-              <td className="border border-[#D1D5DB] px-2 py-1 text-right">{fareInfant}</td>
-              <td className="border border-[#D1D5DB] px-2 py-1 text-right" colSpan={3}>
+              <td className="border border-grid-border px-2 py-1 text-right">{fareAdult}</td>
+              <td className="border border-grid-border px-2 py-1 text-right">{fareChild}</td>
+              <td className="border border-grid-border px-2 py-1 text-right">{fareInfant}</td>
+              <td className="border border-grid-border px-2 py-1 text-right" colSpan={3}>
                 {fareTotal}
               </td>
-              <td className="border border-[#D1D5DB] border-r-0 px-2 py-1 text-right" colSpan={3}>
+              <td className="border border-grid-border border-r-0 px-2 py-1 text-right" colSpan={3}>
                 {fareWithCard}
               </td>
             </tr>
             <tr>
               <td
-                className="h-[6px] border border-[#D1D5DB] border-l-0 border-r-0 bg-white px-0 py-0"
+                className="h-[6px] border border-grid-border border-l-0 border-r-0 bg-white px-0 py-0"
                 colSpan={10}
               />
             </tr>
             <tr>
-              <th className="whitespace-nowrap border border-[#D1D5DB] border-l-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white">
+              <th className="whitespace-nowrap border border-grid-border border-l-0 bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground">
                 구분
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={7}>
+              <th className="whitespace-nowrap border border-grid-border bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground" colSpan={7}>
                 내용
               </th>
-              <th className="whitespace-nowrap border border-[#D1D5DB] border-r-0 bg-[#5E27A5] px-2 py-1 text-center font-medium text-white" colSpan={2}>
+              <th className="whitespace-nowrap border border-grid-border border-r-0 bg-grid-header px-2 py-1 text-center font-medium text-grid-header-foreground" colSpan={2}>
                 비고
               </th>
             </tr>
             {summaryRows.map(([label, detail, note]) => (
               <tr key={label}>
-                <td className="border border-[#D1D5DB] bg-[#F3E8FF] px-2 py-1 text-center align-top font-medium">
+                <td className="border border-grid-border bg-muted px-2 py-1 text-center align-top font-medium">
                   {label}
                 </td>
-                <td className="border border-[#D1D5DB] px-2 py-1" colSpan={7}>
+                <td className="border border-grid-border px-2 py-1" colSpan={7}>
                   <div className="whitespace-pre-wrap">{detail || ""}</div>
                 </td>
-                <td className="border border-[#D1D5DB] px-2 py-1" colSpan={2}>
+                <td className="border border-grid-border px-2 py-1" colSpan={2}>
                   {note || ""}
                 </td>
               </tr>
@@ -399,7 +401,7 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
         </table>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB]">
+      <div className="overflow-x-auto rounded-lg border border-grid-border">
         <table className={PREVIEW_WIDE_TABLE_CLASS}>
           <colgroup>
             <col className="w-[11%]" />
@@ -409,7 +411,7 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
             <col className="w-[43%]" />
             <col className="w-[14%]" />
           </colgroup>
-          <thead style={{ backgroundColor: PREVIEW_STYLE.brand }} className="whitespace-nowrap text-white">
+          <thead className="whitespace-nowrap bg-grid-header text-grid-header-foreground">
             <tr>
               <th className="px-3 py-2 text-center">일자</th>
               <th className="px-3 py-2 text-center">지역</th>
@@ -434,11 +436,11 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
                 return day.rows.map((row, rowIndex) => {
                   const isFirst = rowIndex === 0;
                   return (
-                    <tr key={`${row.id}-${rowIndex}`} className="border-t border-[#D1D5DB]">
+                    <tr key={`${row.id}-${rowIndex}`} className="border-t border-grid-border">
                     {isFirst ? (
                         <td
                           rowSpan={dayRowSpan}
-                          className="whitespace-pre-wrap border-r border-[#D1D5DB] px-3 py-2 align-middle text-center text-foreground bg-white"
+                          className="whitespace-pre-wrap border-r border-grid-border px-3 py-2 align-middle text-center text-foreground bg-white"
                         >
                           <div className="whitespace-nowrap">
                             <span className="font-medium">{day.dayLabel.split("\n")[0]}</span>
@@ -454,7 +456,7 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
                       <td className="whitespace-nowrap px-3 py-2 text-center text-foreground">{row.time}</td>
                       <td
                         className={`px-3 py-2 text-foreground ${
-                          row.isHotel ? "bg-[#FFF9FAFB]" : "bg-white"
+                          row.isHotel ? "bg-muted/40" : "bg-white"
                         }`}
                       >
                         <div className="whitespace-pre-wrap">
@@ -464,14 +466,14 @@ function ItineraryPreview({ itinerary }: { itinerary: ItineraryData | null }) {
                       {isFirst ? (
                         <td
                           rowSpan={hasMeal ? dayRowSpan : 1}
-                          className="align-middle border-l border-[#D1D5DB] bg-white px-3 py-2 text-foreground"
+                          className="align-middle border-l border-grid-border bg-white px-3 py-2 text-foreground"
                         >
                           <div className="whitespace-pre-wrap">
                             {hasMeal ? renderMealText(day.mealText) : renderMealText(row.meal || "")}
                           </div>
                         </td>
                       ) : hasMeal ? null : (
-                        <td className="border-l border-[#D1D5DB] bg-white px-3 py-2 text-foreground">
+                        <td className="border-l border-grid-border bg-white px-3 py-2 text-foreground">
                           {row.meal ? renderMealText(row.meal) : ""}
                         </td>
                       )}
@@ -669,7 +671,7 @@ function QuotePreview({ quote }: { quote: QuoteData | null }) {
       <PreviewDocumentHeader
         title="견적 산출 내역서"
       />
-      <div className="overflow-x-auto rounded-lg border border-[#D1D5DB]">
+      <div className="overflow-x-auto rounded-lg border border-grid-border">
         <table className={PREVIEW_WIDE_TABLE_CLASS}>
           <colgroup>
             <col className="w-[10%]" />
@@ -681,7 +683,7 @@ function QuotePreview({ quote }: { quote: QuoteData | null }) {
             <col className="w-[9%]" />
             <col className="w-[8%]" />
           </colgroup>
-          <thead style={{ backgroundColor: PREVIEW_STYLE.brand }} className="whitespace-nowrap text-white">
+          <thead className="whitespace-nowrap bg-grid-header text-grid-header-foreground">
             <tr>
               <th className="px-3 py-2 text-center font-medium">항목</th>
               <th className="px-3 py-2 text-center font-medium">지역</th>
@@ -715,7 +717,7 @@ function QuotePreview({ quote }: { quote: QuoteData | null }) {
                         {isFirstRow ? (
                           <td
                             rowSpan={count}
-                            className="border-r border-[#D1D5DB] bg-[#F3E8FF] px-3 py-1.5 align-middle text-center font-bold text-foreground"
+                            className="border-r border-grid-border bg-muted px-3 py-1.5 align-middle text-center font-bold text-foreground"
                           >
                             {label}
                           </td>
@@ -736,7 +738,7 @@ function QuotePreview({ quote }: { quote: QuoteData | null }) {
                         {isFirstRow ? (
                           <td
                             rowSpan={count}
-                            className="border-l border-[#D1D5DB] px-3 py-1.5 text-right font-semibold text-foreground"
+                            className="border-l border-grid-border px-3 py-1.5 text-right font-semibold text-foreground"
                           >
                             {subtotal.toLocaleString()}
                           </td>
@@ -764,18 +766,18 @@ function QuotePreview({ quote }: { quote: QuoteData | null }) {
                 {index === 0 ? (
                   <td
                     rowSpan={summaryRows.length}
-                    className="align-middle border border-[#D1D5DB] bg-[#F3E8FF] px-3 py-1.5 text-center font-bold text-foreground"
+                    className="align-middle border border-grid-border bg-muted px-3 py-1.5 text-center font-bold text-foreground"
                   >
                     예상 총 경비
                   </td>
                 ) : null}
                 <td
-                  className="whitespace-nowrap border border-[#D1D5DB] bg-[#FFF9FAFB] px-3 py-1.5 text-center font-medium text-muted-foreground"
+                  className="whitespace-nowrap border border-grid-border bg-white px-3 py-1.5 text-center font-medium text-muted-foreground"
                 >
                   {row.label}
                 </td>
                 <td
-                  className={`whitespace-nowrap border border-[#D1D5DB] px-3 py-1.5 text-right font-semibold ${
+                  className={`whitespace-nowrap border border-grid-border px-3 py-1.5 text-right font-semibold ${
                     row.isTotal ? "text-red-600" : "text-foreground"
                   }`}
                 >

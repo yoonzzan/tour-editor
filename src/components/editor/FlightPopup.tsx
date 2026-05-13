@@ -181,20 +181,30 @@ export function FlightPopup({ onClose, onSelect }: Props) {
       : "편도 조건을 입력 후 조회하세요. 편도 검색은 인디비 요금만 표시됩니다.";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="flex w-[1120px] flex-col rounded-lg border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold text-foreground">항공 조회</h2>
+    <div
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-[rgba(0,0,0,0.45)]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="z-modal flex max-h-[90vh] w-[1120px] flex-col overflow-hidden rounded-md border border-border bg-card shadow-none"
+      >
+        <div className="flex h-8 shrink-0 items-center justify-between bg-chrome-sidebar px-3 text-chrome-sidebar-foreground">
+          <h2 className="text-xs font-semibold">항공 조회</h2>
           <button
+            type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="text-muted-foreground hover:text-foreground"
+            className="rounded-erp p-1 text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
           >
             ✕
           </button>
         </div>
 
-        <div className="border-b border-border px-5 py-4">
+        <div className="shrink-0 border-b border-border px-5 py-4">
           <div className="mb-4 inline-flex overflow-hidden rounded-md border border-input bg-background">
             {(["ROUND_TRIP", "ONE_WAY"] as const).map((tripType) => (
               <button
@@ -230,7 +240,7 @@ export function FlightPopup({ onClose, onSelect }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-5 py-4" style={{ minHeight: "280px" }}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" style={{ minHeight: "280px" }}>
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
@@ -256,10 +266,11 @@ export function FlightPopup({ onClose, onSelect }: Props) {
           )}
         </div>
 
-        <div className="flex justify-end border-t border-border px-5 py-3">
+        <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-md border border-border px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+            className="h-7 rounded-erp border border-border px-4 text-xs font-medium text-foreground hover:bg-muted"
           >
             닫기
           </button>

@@ -30,8 +30,8 @@ package "Next.js 서버" {
   component "API Routes\nsrc/app/api/**" as API
   component "NextAuth\nJWT 세션" as Auth
   component "버전 서비스\ncreateVersion" as Version
-  component "일정 파서\naiParser" as Parser
-  component "스프레드시트 텍스트화\nspreadsheetText" as SheetText
+  component "일정 파서\nparseItineraryWithDiagnostics\n(src/lib/itinerary/aiParser)" as Parser
+  component "스프레드시트→텍스트\nspreadsheetRowsToText" as SheetText
   component "일정 정책/표시\npolicy, display" as Itinerary
   component "견적 서비스\ncurrency, generate" as QuoteSvc
   component "MCP 매핑\nmapSaleProductToItinerary" as Mapper
@@ -74,18 +74,20 @@ Mapper --> API : "ItineraryData"
 API --> SearchPopup : "상품 일정표 데이터"
 SearchPopup --> Store : "loadFromProduct\nisDirty=true"
 
-SearchPopup --> API : "POST /api/itinerary/parse\nfile/text/title"
+SearchPopup --> API : "POST /api/itinerary/parse\nfile/text/title (?debug=1 선택)"
 API --> Config : "OPENAI_* 설정 확인"
-API --> SheetText : ".xlsx 셀 표시값 추출\n시간 셀 HH:mm 보정"
+API --> SheetText : ".xlsx 시트 스코어·다중 시트 선택\n(일정표 시트 우선, 최대 8)\n셀 표시값→텍스트, HH:mm 보정"
+SheetText --> API : "[sheet:이름] 구획 포함 rawText"
 API --> AI : "이미지형 PDF OCR\n텍스트 부족 시"
 AI --> API : "OCR 텍스트"
-API --> Parser : ".pdf/OCR/.hwpx/text 원문 정규화"
-Parser --> AI : "분석 + JSON 변환\n가능할 때만"
-AI --> Parser : "AI 일정 후보"
-Parser --> Parser : "기본 파서 후보 생성"
-Parser --> Parser : "품질 비교\nai/fallback-tabular/fallback-quality"
-Parser --> Parser : "표 원문 식사/호텔 보정"
-Parser --> API : "ItineraryData + diagnostics"
+API --> Parser : ".pdf/OCR/.hwpx/text\nrawText + title"
+Parser --> Parser : "전처리 preprocess\n증거(evidence) 수집"
+Parser --> AI : "분석 + JSON 변환\n(API key 있을 때)"
+AI --> Parser : "ai 후보 ItineraryData"
+Parser --> Parser : "결정적 후보\ndeterministic-tabular /\ndeterministic-narrative"
+Parser --> Parser : "후보별 품질·필드 커버리지 스코어\n표 경계 시 표 항목 권위 병합"
+Parser --> Parser : "선택: ai vs tabular vs quality\n+ 식사/숙박 원문 보정"
+Parser --> API : "ItineraryData + diagnostics\n(candidateScores 등)"
 API --> SearchPopup : "파싱 결과"
 SearchPopup --> Store : "loadFromProduct\nisDirty=true"
 

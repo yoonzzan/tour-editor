@@ -132,9 +132,26 @@ export function buildParseUserPrompt(title: string | undefined, rawText: string)
   ].join("\n");
 }
 
-export function buildAnalysisUserPrompt(title: string | undefined, rawText: string): string {
+export function buildAnalysisUserPrompt(
+  title: string | undefined,
+  rawText: string,
+  evidenceText = "",
+): string {
+  const evidenceBlock = evidenceText.trim()
+    ? [
+        "[코드 추출 evidence]",
+        "아래 evidence는 서버가 원문에서 먼저 찾은 근거다.",
+        "확정 evidence는 누락하지 말고 분석 결과에 반영한다.",
+        "후보 evidence는 원문 맥락으로 실제 일정/메타인지 판단해서 최대한 살린다.",
+        "evidence와 원문에 없는 값은 만들지 않는다.",
+        evidenceText.trim(),
+        "",
+      ]
+    : [];
+
   return [
     "아래 원문을 먼저 구조적으로 분석해.",
+    "코드가 찾은 evidence와 원문을 함께 보고, 명확히 분리되지 않은 행도 여행 일정 관점에서 해석해.",
     "",
     "[출력 형식]",
     "[AI 분석 결과]",
@@ -155,6 +172,7 @@ export function buildAnalysisUserPrompt(title: string | undefined, rawText: stri
     "1일차 | TRANSFER | 인천공항 출발 |  | 10:00 | ",
     "1일차 | MEAL | 호텔식 |  |  | breakfast",
     "",
+    ...evidenceBlock,
     "[원문]",
     `title: ${title ?? ""}`,
     rawText,

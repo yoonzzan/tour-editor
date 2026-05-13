@@ -96,7 +96,94 @@ async function makeXlsxWithDateCells(): Promise<File> {
   });
 }
 
+async function makeXlsxWithScheduleOnLaterSheetAndMergedDay(): Promise<File> {
+  const workbook = new ExcelJS.Workbook();
+  const invoice = workbook.addWorksheet("인보이스");
+  invoice.addRow(["견적번호", "QA-TEST"]);
+  invoice.addRow(["합계", 1234567]);
+
+  const worksheet = workbook.addWorksheet("일정표");
+  worksheet.addRow(["일자", "지역", "교통편", "시간", "세부일정", "식사"]);
+  worksheet.addRow([1, "인천", "OZ", "10:00", "인천공항 출발"]);
+  worksheet.addRow(["", "삿포로", "전용버스", "13:00", "신치토세 공항 도착", "중: 현지식"]);
+  worksheet.addRow(["", "후라노", "전용버스", "15:30", "후라노 팜 도미타"]);
+  worksheet.addRow([2, "삿포로", "전용버스", "09:00", "오타루 운하 관광", "조: 호텔식"]);
+  worksheet.addRow(["", "", "", "", "숙 소 : SAPPORO GRAND HOTEL"]);
+  worksheet.mergeCells("A2:A4");
+  worksheet.getCell("A2").value = 1;
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new File([buffer], "later-sheet-merged.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+async function makeXlsxWithPrimaryScheduleAndNoisySampleSheets(): Promise<File> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("일정표");
+  worksheet.addRow(["일자", "지역", "교통편", "시간", "세부일정", "식사"]);
+  worksheet.addRow([1, "인천", "KE093", "18:50", "인천 국제공항 출발"]);
+  worksheet.addRow(["2025-04-21", "워싱턴", "", "19:40", "워싱턴공항(IAD) 도착 및 입국/세관 신고"]);
+  worksheet.addRow(["", "", "", "", "가이드 미팅 후 이동", "석:현지식"]);
+  worksheet.addRow(["", "", "", "", "HOTEL : SpringHill Suites Centreville Chantilly 또는 동급"]);
+
+  const quote = workbook.addWorksheet("견적");
+  quote.addRow(["호텔", "Springhill By Marriott Centreville/Chantilly또는 동급"]);
+  quote.addRow(["식사", "조식: 호텔식 포함"]);
+
+  const sample = workbook.addWorksheet("샘플일정");
+  sample.addRow([1, "인천", "KE091", "17:55", "인천 국제공항 출발"]);
+  sample.addRow(["", "", "전용차량", "", "[미팅보드: ]로 가이드 미팅", "", "중식: 현지식"]);
+  sample.addRow(["", "", "", "Hotel:", "견적 호텔"]);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new File([buffer], "primary-schedule-with-sample.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
 describe("/api/itinerary/parse", () => {
+  it("returns public diagnostics by default and candidate scores only in debug mode", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+    vi.resetModules();
+
+    const { POST } = await import("./route");
+    const formData = new FormData();
+    formData.append("text", "1일차 2026-06-02\n- 이동 | 인천공항 출발\n- 식사 | 석식: 현지식\n- 숙박 | 테스트 호텔");
+
+    const defaultRequest = {
+      formData: async () => formData,
+    } as unknown as NextRequest;
+
+    const defaultResponse = await POST(defaultRequest);
+    const defaultPayload = (await defaultResponse.json()) as {
+      diagnostics?: {
+        qualityScore?: number;
+        candidateScores?: unknown[];
+      };
+    };
+
+    expect(defaultResponse.headers.get("x-itinerary-parser-score")).not.toBeNull();
+    expect(defaultPayload.diagnostics?.qualityScore).toBeGreaterThanOrEqual(0);
+    expect(defaultPayload.diagnostics?.candidateScores).toBeUndefined();
+
+    const debugRequest = {
+      formData: async () => formData,
+      nextUrl: new URL("http://localhost/api/itinerary/parse?debug=1"),
+    } as unknown as NextRequest;
+
+    const debugResponse = await POST(debugRequest);
+    const debugPayload = (await debugResponse.json()) as {
+      diagnostics?: {
+        candidateScores?: Array<{ candidate?: string }>;
+      };
+    };
+
+    expect(debugPayload.diagnostics?.candidateScores?.[0]?.candidate).toBe("deterministic-narrative");
+  });
+
   it("rejects legacy .xls files with a clear conversion message", async () => {
     process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
     process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
@@ -320,6 +407,85 @@ describe("/api/itinerary/parse", () => {
     expect(dayOneContents).toContain("LOTTE CITY HOTEL TASHKENT PALAE 4*");
     expect(dayOneContents).not.toContain("HILTON GARDEN INN 4*");
     expect(dayTwoContents).toContain("HILTON GARDEN INN 4*");
+  });
+
+  it("reads schedule data from later sheets and propagates merged day cells", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+    vi.resetModules();
+
+    const { POST } = await import("./route");
+    const formData = new FormData();
+    formData.append("file", await makeXlsxWithScheduleOnLaterSheetAndMergedDay());
+
+    const request = {
+      formData: async () => formData,
+    } as unknown as NextRequest;
+
+    const response = await POST(request);
+    const payload = (await response.json()) as {
+      itinerary?: {
+        days?: Array<{
+          dayNo?: number;
+          items?: Array<{
+            content?: string;
+            mealSlot?: string;
+            meal?: { breakfast?: string; lunch?: string };
+          }>;
+        }>;
+      };
+      error?: string;
+    };
+
+    expect(payload.error).toBeUndefined();
+    expect(response.status).toBe(200);
+    expect(payload.itinerary?.days?.map((day) => day.dayNo)).toEqual([1, 2]);
+    const contents = payload.itinerary?.days?.flatMap((day) => day.items?.map((item) => item.content ?? "") ?? []) ?? [];
+    expect(contents).toContain("후라노 팜 도미타");
+    expect(contents).toContain("SAPPORO GRAND HOTEL");
+    const dayOneItems = payload.itinerary?.days?.[0]?.items ?? [];
+    const dayTwoItems = payload.itinerary?.days?.[1]?.items ?? [];
+    expect(dayOneItems.find((item) => item.mealSlot === "lunch")?.meal?.lunch).toBe("현지식");
+    expect(dayTwoItems.find((item) => item.mealSlot === "breakfast")?.meal?.breakfast).toBe("호텔식");
+  });
+
+  it("uses the primary schedule sheet instead of quote or sample itinerary sheets", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+    vi.resetModules();
+
+    const { POST } = await import("./route");
+    const formData = new FormData();
+    formData.append("file", await makeXlsxWithPrimaryScheduleAndNoisySampleSheets());
+    formData.append("title", "미동부 테스트");
+
+    const request = {
+      formData: async () => formData,
+      nextUrl: new URL("http://localhost/api/itinerary/parse?debug=1"),
+    } as unknown as NextRequest;
+
+    const response = await POST(request);
+    const payload = (await response.json()) as {
+      itinerary?: {
+        days?: Array<{
+          items?: Array<{ content?: string; detail?: string; hotel?: string }>;
+        }>;
+      };
+    };
+
+    const itemText = payload.itinerary?.days
+      ?.flatMap((day) => day.items ?? [])
+      .flatMap((item) => [item.content ?? "", item.detail ?? "", item.hotel ?? ""])
+      .join("\n") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(itemText).toContain("워싱턴공항(IAD) 도착");
+    expect(itemText).toContain("SpringHill Suites Centreville Chantilly");
+    expect(itemText).not.toContain("견적 호텔");
+    expect(itemText).not.toContain("[미팅보드");
+    expect(itemText).not.toContain("Springhill By Marriott Centreville/Chantilly");
   });
 
   it("uses OCR fallback when uploaded PDF has no extractable text", async () => {

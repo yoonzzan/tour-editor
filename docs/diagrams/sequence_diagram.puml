@@ -76,7 +76,7 @@ alt 구형 파일 형식
   API --> Client: 422\n.xls/.hwp 변환 안내
 else 지원 형식
   alt .xlsx
-    API -> Domain: ExcelJS로 셀 표시값 추출\n시간 전용 셀 HH:mm 보정
+    API -> Domain: ExcelJS 워크북 로드\n시트명·내용 스코어로 일정표 시트 우선 선택\n(복수 시트, 최대 8)\n셀 표시값→텍스트 + HH:mm 보정
   else .pdf
     API -> Domain: pdf-parse로 텍스트 추출
     alt 추출 텍스트 부족
@@ -89,22 +89,24 @@ else 지원 형식
   else text/csv/json
     API -> Domain: 원문 텍스트 사용
   end
-  API -> Domain: parseItineraryWithDiagnostics(rawText)
-  opt OPENAI_API_KEY 존재
-    Domain -> AI: 분석 프롬프트 요청
-    AI --> Domain: 일차별 분석 텍스트
-    Domain -> AI: JSON 변환 요청
-    AI --> Domain: AI 일정 JSON
-  end
-  Domain -> Domain: 기본 파서 결과 생성\n표 행/식사/숙박 보정
-  Domain -> Domain: AI 품질과 기본 파서 품질 비교
-  alt AI가 충분히 풍부함
-    Domain -> Domain: AI 일정 사용\n식사/호텔은 원문 표 값으로 교체
-    Domain --> API: source=ai
-  else 표 기반 기본 파서가 더 안정적
-    Domain --> API: source=fallback-tabular
-  else AI 실패 또는 품질 부족
-    Domain --> API: source=fallback-ai-error/fallback-quality
+  API -> Domain: parseItineraryWithDiagnostics(rawText, title)\n전처리·증거(evidence) 수집
+  alt OPENAI_API_KEY 없음
+    Domain -> Domain: 결정적 파싱·단일 후보 스코어\n(deterministic-narrative 등)
+    Domain --> API: ItineraryData + diagnostics\n(source=fallback-no-key)
+  else OPENAI_API_KEY 있음
+    Domain -> Domain: deterministic-tabular /\ndeterministic-narrative 후보 생성·스코어
+    Domain -> AI: 일정 분석·JSON 요청
+    AI --> Domain: ai 후보 ItineraryData
+    Domain -> Domain: 표 셀 경계 시\napplyAuthoritativeTabularItems
+    Domain -> Domain: 후보별 품질·필드 커버리지·노이즈 패널티 비교
+    alt AI가 표 대비 충분히 풍부·품질 허용
+      Domain -> Domain: AI 채택 + 식사/숙박 원문 보정
+      Domain --> API: source=ai, candidateScores
+    else 표 결정적 후보가 더 안정적
+      Domain --> API: source=fallback-tabular
+    else AI 실패·불충분·품질 미달
+      Domain --> API: source=fallback-ai-error /\nfallback-quality
+    end
   end
   API --> Client: ItineraryData + diagnostics
   Client -> Store: loadFromProduct(itinerary)

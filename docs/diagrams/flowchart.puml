@@ -65,8 +65,9 @@ repeat
     :POST /api/itinerary/parse 호출;
     if (지원 파일 형식인가?) then (예)
       if (.xlsx 파일인가?) then (예)
-        :ExcelJS로 셀 표시값 추출;
-        :시간 전용 셀을 HH:mm으로 보정;
+        :ExcelJS로 워크북 로드;
+        :시트 스코어로 일정표 시트 우선 선택\n복수 시트 병합(최대 8);
+        :셀 표시값을 텍스트로 변환\n시간 전용 셀 HH:mm 보정;
       elseif (.pdf 파일인가?) then (예)
         :pdf-parse로 텍스트 추출;
         if (추출 텍스트가 부족한가?) then (예)
@@ -81,19 +82,20 @@ repeat
     else (아니오)
       :.xls/.hwp 변환 안내 오류 표시;
     endif
-    :기본 파서 후보 생성;
+    :parseItineraryWithDiagnostics\n전처리·증거 수집;
+    :deterministic-tabular /\ndeterministic-narrative 후보 생성·스코어;
     if (OPENAI_API_KEY가 있는가?) then (예)
-      :AI 분석 및 JSON 파싱 후보 생성;
-      if (AI 결과가 기본 파서보다 충분히 풍부한가?) then (예)
-        :AI 결과 선택;
-        :표 원문 식사/호텔 값으로 보정;
-      elseif (표 기반 기본 파서가 안정적인가?) then (예)
-        :fallback-tabular 결과 선택;
+      :AI JSON 후보 생성;
+      if (AI가 표 대비 충분히 풍부하고\n품질 허용?) then (예)
+        :source=ai 채택;
+        :표 경계 있으면 표 항목 권위 병합\n식사/숙박 원문 보정;
+      elseif (표 결정적 후보가 더 안정적인가?) then (예)
+        :source=fallback-tabular;
       else (아니오)
-        :품질 진단 메시지와 함께 fallback 선택;
+        :source=fallback-ai-error /\nfallback-quality 등;
       endif
     else (아니오)
-      :기본 파서 결과 선택;
+      :결정적 후보만 스코어\n(source=fallback-no-key 등);
     endif
     :일차별 순서 보존;
     :식사 열 조/중/석, 조식/중식/석식 패턴 보정;

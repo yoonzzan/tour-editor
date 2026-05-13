@@ -46,3 +46,7 @@ GitNexus가 식별한 주요 기능 단위입니다.
 ## 5. 참고 도구
 - **GitNexus:** 코드 호출 관계 및 영향도 분석을 위해 사용합니다. (`npx gitnexus status`)
 - **PlantUML:** `docs/diagrams/` 내의 다이어그램을 통해 시각적 구조를 확인할 수 있습니다.
+
+## 6. 저장소 부가물
+
+- **`presentation/`** — Remotion 기반 제품 소개 슬라이드. Next.js 앱 런타임과 무관합니다. diff가 클 때는 제품 코드와 **PR을 분리**하면 리뷰 부담이 줄어듭니다(`docs/PROGRESS.md` Phase 9 · T-907).

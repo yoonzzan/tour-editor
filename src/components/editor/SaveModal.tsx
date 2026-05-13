@@ -28,28 +28,30 @@ export function SaveModal({ onSave, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-[rgba(0,0,0,0.45)]"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSaving) onClose();
       }}
     >
-      <div className="w-96 rounded-xl bg-background shadow-2xl">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <span className="text-sm font-semibold text-foreground">버전 저장</span>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="z-modal w-96 overflow-hidden rounded-md border border-border bg-background shadow-none"
+      >
+        <div className="flex h-8 shrink-0 items-center justify-between bg-chrome-sidebar px-3 text-chrome-sidebar-foreground">
+          <span className="text-xs font-semibold">버전 저장</span>
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
             aria-label="닫기"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            className="rounded-erp p-1 text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover disabled:opacity-50"
           >
             ✕
           </button>
         </div>
 
-        {/* 폼 */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-4">
           <div>
             <label
               htmlFor="changeReason"
@@ -64,7 +66,7 @@ export function SaveModal({ onSave, onClose }: Props) {
               placeholder="예) 숙박 업그레이드 반영, 항공 스케줄 변경..."
               rows={3}
               disabled={isSaving}
-              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              className="h-20 w-full resize-none rounded-erp border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
             />
           </div>
 
@@ -74,19 +76,19 @@ export function SaveModal({ onSave, onClose }: Props) {
             </p>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-between gap-2 border-t border-border bg-background pt-4">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="rounded-md border border-border px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className="h-7 rounded-erp border border-border px-4 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
             >
               취소
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              className="h-7 rounded-erp bg-primary px-4 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               {isSaving ? "저장 중..." : "저장"}
             </button>
