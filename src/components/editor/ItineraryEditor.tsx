@@ -169,7 +169,7 @@ export function ItineraryEditor() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 pb-16">
+    <div className="flex w-full flex-col gap-4 pb-16">
       {/* ── 헤더 (T-302) ─────────────────────────────── */}
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold text-foreground">

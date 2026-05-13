@@ -224,7 +224,7 @@ export function QuoteEditor({ role }: Props) {
   const showPrices = priceMode !== "숨김";
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 pb-16">
+    <div className="flex w-full flex-col gap-4 pb-16">
       {/* ── 헤더 (T-402) ─────────────────────────────── */}
       <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
         <h2 className="text-sm font-semibold text-foreground">견적서 에디터</h2>

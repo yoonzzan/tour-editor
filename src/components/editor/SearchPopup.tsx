@@ -42,20 +42,53 @@ interface ParseApiResponse {
     aiMeaningfulItemCount?: number;
     fallbackMeaningfulItemCount?: number;
     expectedMinimumItemCount?: number;
+    selectedCandidate?: "ai" | "deterministic-tabular" | "deterministic-narrative";
+    qualityScore?: number;
+    warnings?: string[];
+    fieldCoverage?: {
+      dayCount: number;
+      datedDayCount: number;
+      meaningfulItemCount: number;
+      mealCount: number;
+      accommodationCount: number;
+      hasFlight: boolean;
+      hasVehicle: boolean;
+      hasHotelSummary: boolean;
+      hasIncluded: boolean;
+      hasExcluded: boolean;
+      hasPassengerCount: boolean;
+      hasFare: boolean;
+    };
+    noiseRemovedCount?: number;
   };
   error?: string;
 }
 
 function parserDiagnosticMessage(diagnostics: ParseApiResponse["diagnostics"]): string | null {
-  if (!diagnostics || diagnostics.source === "ai" || diagnostics.source === "fallback-tabular") return null;
+  if (!diagnostics) return null;
+  const summary = [
+    diagnostics.qualityScore !== undefined ? `품질 점수: ${diagnostics.qualityScore}/100` : "",
+    diagnostics.selectedCandidate ? `선택 파서: ${diagnostics.selectedCandidate}` : "",
+    diagnostics.fieldCoverage
+      ? `추출 결과: ${diagnostics.fieldCoverage.dayCount}일차, 일정 ${diagnostics.fieldCoverage.meaningfulItemCount}개, 식사 ${diagnostics.fieldCoverage.mealCount}개, 숙박 ${diagnostics.fieldCoverage.accommodationCount}개`
+      : "",
+  ].filter(Boolean);
+  const warnings = diagnostics.warnings?.filter((warning) => warning.trim().length > 0) ?? [];
+  if (warnings.length > 0) {
+    return [...summary, "", ...warnings].filter((line) => line !== "").join("\n");
+  }
+  if (diagnostics.source === "ai" || diagnostics.source === "fallback-tabular") {
+    return null;
+  }
   if (diagnostics.source === "fallback-no-key") {
-    return "AI API key가 서버에 반영되지 않아 기본 파서로 불러왔습니다. dev 서버를 재시작하고 .env.local의 OPENAI_API_KEY를 확인해 주세요.";
+    return [...summary, "AI API key가 서버에 반영되지 않아 기본 파서로 불러왔습니다. dev 서버를 재시작하고 .env.local의 OPENAI_API_KEY를 확인해 주세요."].filter(Boolean).join("\n");
   }
   if (diagnostics.source === "fallback-ai-error") {
-    return `AI 호출이 실패해서 기본 파서로 불러왔습니다.${diagnostics.aiError ? `\n\n원인: ${diagnostics.aiError}` : ""}`;
+    return [...summary, `AI 호출이 실패해서 기본 파서로 불러왔습니다.${diagnostics.aiError ? `\n\n원인: ${diagnostics.aiError}` : ""}`].filter(Boolean).join("\n");
   }
   if (diagnostics.source === "fallback-quality") {
     return [
+      ...summary,
       "AI 결과가 품질 기준을 통과하지 못해 기본 파서로 불러왔습니다.",
       `AI 항목 수: ${diagnostics.aiMeaningfulItemCount ?? 0}`,
       `기본 파서 항목 수: ${diagnostics.fallbackMeaningfulItemCount ?? 0}`,
@@ -134,9 +167,29 @@ function importAlignmentMessage(expectedDayCount: number, outOfRangeDayNos: numb
 }
 
 const FOOTER_PRIMARY_BUTTON_CLASS =
-  "w-32 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50";
+  "h-7 w-32 rounded-erp bg-primary px-4 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50";
 const FOOTER_SECONDARY_BUTTON_CLASS =
-  "w-32 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted";
+  "h-7 w-32 rounded-erp border border-border px-4 text-xs font-medium text-foreground hover:bg-muted";
+const DIRECT_INPUT_TEMPLATE = [
+  "상품명: 싱가포르 4박 5일",
+  "기간: 2026-06-02 ~ 2026-06-06",
+  "인원: 성인 10, 아동 0, 유아 0",
+  "항공 출발: OZ751 인천 10:00 → 싱가포르 15:30",
+  "항공 귀국: OZ752 싱가포르 23:00 → 인천 06:30",
+  "숙박호텔: Aloft Singapore Novena",
+  "",
+  "1일차 2026-06-02",
+  "- 이동 | 시간=10:00 | 인천공항 출발",
+  "- 관광 | 머라이언 공원",
+  "- 식사 | 석식: 현지식",
+  "- 숙박 | Aloft Singapore Novena",
+  "",
+  "2일차 2026-06-03",
+  "- 식사 | 조식: 호텔식",
+  "- 관광 | 센토사섬",
+  "- 식사 | 중식: 한식",
+  "- 식사 | 석식: 송파바쿠테",
+].join("\n");
 
 export function SearchPopup({ onClose }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("code");
@@ -348,26 +401,31 @@ export function SearchPopup({ onClose }: Props) {
 
   // ── 렌더 ─────────────────────────────────────────────
   return (
-    /* 오버레이 */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-[rgba(0,0,0,0.45)]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="flex w-[640px] flex-col rounded-lg border border-border bg-background shadow-lg">
-        {/* 헤더 */}
-        <div className="flex h-12 items-center justify-between border-b border-border px-4">
-          <h2 className="text-sm font-semibold text-foreground">일정 불러오기</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="search-popup-title"
+        className="z-modal flex max-h-[90vh] w-[640px] flex-col overflow-hidden rounded-md border border-border bg-background shadow-none"
+      >
+        <div className="flex h-8 shrink-0 items-center justify-between bg-chrome-sidebar px-3 text-chrome-sidebar-foreground">
+          <h2 id="search-popup-title" className="text-xs font-semibold">
+            일정 불러오기
+          </h2>
           <button
+            type="button"
             aria-label="닫기"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-erp p-1 text-chrome-sidebar-foreground hover:bg-chrome-sidebar-hover"
             onClick={onClose}
           >
             ✕
           </button>
         </div>
 
-        {/* 탭 바 */}
-        <div className="flex border-b border-border">
+        <div className="flex border-b border-border bg-muted/30">
           {(
             [
               { key: "code", label: "상품코드 조회" },
@@ -377,9 +435,10 @@ export function SearchPopup({ onClose }: Props) {
           ).map(({ key, label }) => (
             <button
               key={key}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+              type="button"
+              className={`px-4 py-2 text-xs font-medium transition-colors ${
                 activeTab === key
-                  ? "border-b-2 border-primary text-primary"
+                  ? "border-b-2 border-pk-tab text-pk-tab"
                   : "text-muted-foreground hover:text-foreground"
               }`}
               onClick={() => setActiveTab(key)}
@@ -389,8 +448,7 @@ export function SearchPopup({ onClose }: Props) {
           ))}
         </div>
 
-        {/* 탭 콘텐츠 */}
-        <div className="flex-1 p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {/* ── 상품코드 탭 ── */}
           {activeTab === "code" && (
             <div className="flex flex-col gap-4">
@@ -537,15 +595,31 @@ export function SearchPopup({ onClose }: Props) {
           {/* ── 직접 입력 탭 (T-208) ── */}
           {activeTab === "direct" && (
             <div className="flex flex-col gap-4">
-              <label htmlFor="direct-input" className="text-sm text-muted-foreground">
-                일정 내용을 자유롭게 입력하세요. 입력한 내용을 일정표 형식으로 정리해 불러옵니다.
-              </label>
+              <div className="flex items-start justify-between gap-3">
+                <label htmlFor="direct-input" className="text-sm text-muted-foreground">
+                  일정 내용을 입력하세요. 일차, 날짜, 식사, 숙박을 줄 단위로 나누면 더 정확하게 불러옵니다.
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setDirectText((current) => current.trim() ? current : DIRECT_INPUT_TEMPLATE)}
+                  className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                >
+                  예시 채우기
+                </button>
+              </div>
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-5 text-muted-foreground">
+                <p className="font-medium text-foreground">권장 형식</p>
+                <p>1일차 2026-06-02</p>
+                <p>- 이동 | 시간=10:00 | 인천공항 출발</p>
+                <p>- 식사 | 중식: 현지식</p>
+                <p>- 숙박 | 호텔명</p>
+              </div>
               <textarea
                 id="direct-input"
                 value={directText}
                 onChange={(e) => setDirectText(e.target.value)}
-                placeholder={`예시:\n1일차 — 인천 출발, 싱가포르 도착, 호텔 체크인\n2일차 — 센토사섬 관광, 유니버셜 스튜디오\n...`}
-                rows={8}
+                placeholder={DIRECT_INPUT_TEMPLATE}
+                rows={10}
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {directError && (
@@ -557,8 +631,14 @@ export function SearchPopup({ onClose }: Props) {
           )}
         </div>
 
-        {/* 푸터 */}
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+        <div className="flex shrink-0 justify-between gap-2 border-t border-border bg-background px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className={FOOTER_SECONDARY_BUTTON_CLASS}
+          >
+            취소
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -580,13 +660,6 @@ export function SearchPopup({ onClose }: Props) {
             className={FOOTER_PRIMARY_BUTTON_CLASS}
           >
             일정 불러오기
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className={FOOTER_SECONDARY_BUTTON_CLASS}
-          >
-            취소
           </button>
         </div>
       </div>

@@ -20,7 +20,7 @@ test.describe("T-805: 버전 생성", () => {
 
     // 1일차 첫 번째 항목 내용 변경 → isDirty = true
     const day1Block = page.getByTestId("day-block-1");
-    await day1Block.getByLabel("항목 내용").first().fill("수정된 내용 테스트");
+    await day1Block.getByLabel("내용").first().fill("수정된 내용 테스트");
 
     // 저장 버튼 활성화 확인
     const saveBtn = page.getByRole("button", { name: "저장", exact: true }).first();

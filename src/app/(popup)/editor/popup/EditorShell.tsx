@@ -259,7 +259,7 @@ export function EditorShell({ quoteNo, role }: Props) {
   return (
     <div className="flex h-screen flex-col">
       {/* 헤더 */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-4">
+      <header className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-background px-4">
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold text-foreground">
             하나투어 견적·일정 에디터
@@ -286,7 +286,7 @@ export function EditorShell({ quoteNo, role }: Props) {
           {/* 일정 불러오기 버튼 */}
           {canEdit && (
             <button
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              className="h-7 rounded-erp border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               onClick={() => setShowSearch(true)}
             >
               일정 불러오기
@@ -296,7 +296,7 @@ export function EditorShell({ quoteNo, role }: Props) {
           {/* 항공 조회 버튼 (T-605: partner 숨김) */}
           {canEdit && role !== "PARTNER" && (
             <button
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              className="h-7 rounded-erp border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               onClick={() => setShowFlight(true)}
             >
               항공 조회
@@ -306,7 +306,7 @@ export function EditorShell({ quoteNo, role }: Props) {
           {/* 버전 이력 버튼 */}
           {quoteId && (
             <button
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              className="h-7 rounded-erp border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               onClick={() => setShowVersionHistory(true)}
             >
               버전 이력
@@ -316,7 +316,7 @@ export function EditorShell({ quoteNo, role }: Props) {
           {/* 미리보기 버튼 */}
           {hasItinerary && (
             <button
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              className="h-7 rounded-erp border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               onClick={() => setShowPreview(true)}
             >
               미리보기
@@ -326,7 +326,7 @@ export function EditorShell({ quoteNo, role }: Props) {
           {/* 저장 버튼 */}
           {canEdit && (
             <button
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              className="h-7 rounded-erp bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               disabled={!isDirty || !quoteId || !hasItinerary}
               onClick={() => setShowSave(true)}
             >
@@ -336,7 +336,7 @@ export function EditorShell({ quoteNo, role }: Props) {
 
           {/* 닫기 */}
           <button
-            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+            className="h-7 rounded-erp border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
             onClick={() => {
               if (
                 isDirty &&
@@ -357,7 +357,7 @@ export function EditorShell({ quoteNo, role }: Props) {
 
       {/* 탭 바 */}
       {hasItinerary && (
-        <div className="flex shrink-0 justify-center border-b border-border bg-card">
+        <div className="flex w-full shrink-0 border-b border-border bg-muted/40 px-2">
           <div className="flex">
             <TabButton
               active={activeTab === "itinerary"}
@@ -410,7 +410,7 @@ export function EditorShell({ quoteNo, role }: Props) {
               연결된 견적이 없습니다.
             </p>
             <button
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              className="h-8 rounded-erp bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
               onClick={() => setShowSearch(true)}
             >
               일정 불러오기
@@ -479,7 +479,7 @@ function TabButton({
       onClick={onClick}
       className={`border-b-2 px-4 py-2.5 text-xs font-medium transition-colors ${
         active
-          ? "border-primary text-primary"
+          ? "border-pk-tab text-pk-tab"
           : "border-transparent text-muted-foreground hover:text-foreground"
       }`}
     >
