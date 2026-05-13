@@ -165,7 +165,7 @@ export function DayBlock({
         </button>
 
         {showTypeMenu && (
-          <div className="absolute left-3 top-12 z-10 flex flex-col rounded-md border border-border bg-background shadow-md">
+          <div className="absolute left-3 top-12 z-10 flex flex-col rounded-md border border-border bg-background shadow-none">
             {ITEM_TYPES.map(({ type, label }) => (
               <button
                 key={type}

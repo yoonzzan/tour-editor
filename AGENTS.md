@@ -50,6 +50,7 @@
 # 2026-04-21 — `git status --short`를 `.git` 루트가 아닌 경로에서 실행해서 실패 → 명령 실행 전 `git rev-parse --show-toplevel`로 루트 확인 후 작업
 # 2026-04-21 — `npx tsx`로 전역 실행기를 사용했다가 네트워크 제한으로 실패 → 로컬 의존성에서 가능한 실행 경로(`node_modules`) 우선 사용, 네트워크 필요 명령은 사용자에게 승인 요청 후 실행
 # 2026-04-24 — `git status --short`를 `.git` 루트 확인 없이 실행해서 실패 → Git 명령 전 저장소 여부를 먼저 확인하고, 저장소가 아니면 Git 상태 확인을 생략
+# 2026-05-13 — 어두운 스크림 위에서 모달에 `box-shadow`를 주면 가장자리가 밝게 번져 보임 → 에디터 다이얼로그는 `shadow-none` + `border`; `shadow-popover` 문자열은 `src/components/editor/**`, `src/app/(popup)/**` TSX에서 금지(`scripts/quality-gate.sh` 검사)
 
 ## Forbidden Patterns
 - `quoteVersion.update(...)` — 버전 레코드 수정 금지
@@ -59,11 +60,10 @@
 - `git push origin main` 직접 푸시
 - `rm -rf` 위험 명령
 - 하드코딩된 역할 문자열 — `Role` enum 사용
-
-<!-- gitnexus:start -->
+- `shadow-popover` — `src/components/editor/**`, `src/app/(popup)/**` 내 TSX에서 사용 금지(어두운 스크림 위 밝은 테두리 착시); `shadow-none` + `border` — `npm run quality`가 검사
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **tour-editor** (3186 symbols, 5826 relationships, 260 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **tour-editor** (3632 symbols, 6614 relationships, 272 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

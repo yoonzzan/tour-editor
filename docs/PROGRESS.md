@@ -1,7 +1,7 @@
 # PROGRESS — 작업 단위별 진행 현황
 
-> 마지막 업데이트: 2026-04-21  
-> 전체 진행률: 100% (Phase 0~8 + E2E 브라우저 검증 완료)  
+> 마지막 업데이트: 2026-05-13  
+> 전체 진행률: Phase 0~8 완료 + HanaHub UX·품질 보강(Phase 9) 반영  
 > 원칙: 태스크 하나 = 30분 이내 완료 가능한 단위
 
 ---
@@ -153,6 +153,18 @@
 
 ---
 
+## Phase 9: HanaHub UX·품질 보강
+
+- [x] **T-901** EditorShell ERP형 헤더·워크스페이스 탭·툴바(하나허브 톤)
+- [x] **T-902** 주요 모달(Search/Save/Preview/Flight/VersionHistory) — 다크 타이틀바·스크림·**`shadow-popover` 제거**(`shadow-none` + `border`)
+- [x] **T-903** `scripts/quality-gate.sh` — `src/components/editor/**`, `src/app/(popup)/**` 내 TSX에서 문자열 `shadow-popover` 사용 금지 검사
+- [x] **T-904** `.claude/rules/editor.md` — 모달 그림자·테두리 규칙 명시
+- [x] **T-905** `ScheduleItemForm` 항목구분 칩 — `globals.css` 시맨틱 HSL 토큰 + arbitrary class (blue/green/orange 등 하드코드 제거)
+- [x] **T-906** `DESIGN.md` — 레포 추적 정책(`repository` 블록: 커밋 대상, `presentation/`은 대규모 시 별도 PR 권장)
+- [~] **T-907** `presentation/` — 발표용 Remotion 슬라이드 서브트리; 제품 코드와 분리해 PR하면 리뷰 부담 감소(선택)
+
+---
+
 ## 작업 로그
 
 | 날짜 | 태스크 | 내용 |
@@ -172,8 +184,9 @@
 | 2026-04-21 | E2E 안정화 | T-804/T-805 스펙 안정화(카운트 기준 보정, 저장 모달 선택자·응답 동기화). `e2e/global-setup.ts`에서 테스트 데이터 `QuoteVersion` 초기화 처리 추가. Quality Gate(`npm run quality`) 통과, `17 passed` 확인. |
 | 2026-04-24 | UI/견적 현행화 | 일정표·견적서 에디터 폭 통일, 숫자 입력 앞자리 0 정규화, 견적 자동 생성 수량 성인 인원 기준 적용, 지상비수익·하나투어수익·견적 유효기간·버전 비교 UI 문서 현행화. |
 | 2026-04-28 | PDF 파싱 보강 | 이미지형 PDF에서 텍스트 추출이 부족하면 PDF 페이지를 이미지로 렌더링해 OpenAI Vision OCR fallback을 수행하고, OCR 텍스트를 기존 AI/기본 표 파서 품질 비교에 투입하도록 문서 현행화. |
-
----
+| 2026-05-08 | 일정 파서 품질 진단 | AI/표/일반 텍스트 파서 후보별 품질 점수·필드 커버리지·경고 diagnostics 추가, `/api/itinerary/parse?debug=1` 상세 후보 점수 응답 분리, 직접입력 권장 형식·예시 채우기·타입 지정 라인 파싱 보강, 골든 fixture 기준 README 추가. |
+| 2026-05-08 | HanaHub 디자인 1차 적용 | `DESIGN.md` 기준 전역 색상·폰트·타입 스케일·radius 토큰 적용, focus-visible 기본 규칙 추가, `/login` 빌드용 Suspense 경계 보강. |
+| 2026-05-13 | Phase 9·문서 | HanaHub 셸·모달 크롬 정리, 팝업 `shadow-popover` 제거·quality-gate 문자열 검사, `editor.md` 규칙·`DESIGN.md` repository 정책·항목구분 칩 시맨틱 토큰·`AGENTS.md` 학습 1줄 반영. GitNexus `analyze` 시 FTS 확장 다운로드 실패는 비치명적(인덱스는 재구축 가능). |
 
 ## 알려진 이슈
 없음
@@ -186,3 +199,4 @@
 | ADR-03 | 삭제 API = 없음 | 데이터 영구 보존 정책 |
 | ADR-04 | Excel = 서버사이드 ExcelJS | 클라이언트 라이브러리 번들 크기 문제 |
 | ADR-05 | 에디터 = 팝업 진입 전용 | 기존 견적서 상세 화면과 연계 |
+| ADR-06 | 에디터 모달 = 그림자 없음 + 테두리 | 어두운 스크림 위 `box-shadow`가 밝은 테두리로 보이는 착시 방지; `shadow-popover`는 에디터·팝업 TSX에서 미사용(`quality-gate` grep) |

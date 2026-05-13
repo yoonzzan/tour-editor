@@ -21,11 +21,14 @@ interface Props {
 }
 
 const TYPE_COLORS: Record<ScheduleItem["type"], string> = {
-  TRANSFER: "bg-blue-100 text-blue-700",
-  SIGHTSEEING: "bg-green-100 text-green-700",
-  MEAL: "bg-orange-100 text-orange-700",
-  ACCOMMODATION: "bg-purple-100 text-purple-700",
-  OTHER: "bg-gray-100 text-gray-600",
+  TRANSFER:
+    "bg-[hsl(var(--schedule-transfer-bg))] text-[hsl(var(--schedule-transfer-fg))]",
+  SIGHTSEEING:
+    "bg-[hsl(var(--schedule-sight-bg))] text-[hsl(var(--schedule-sight-fg))]",
+  MEAL: "bg-[hsl(var(--schedule-meal-bg))] text-[hsl(var(--schedule-meal-fg))]",
+  ACCOMMODATION:
+    "bg-[hsl(var(--schedule-acc-bg))] text-[hsl(var(--schedule-acc-fg))]",
+  OTHER: "bg-[hsl(var(--schedule-other-bg))] text-[hsl(var(--schedule-other-fg))]",
 };
 
 const ITEM_TYPE_OPTIONS: Array<{ type: ScheduleItemType; label: string }> = [
