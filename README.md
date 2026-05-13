@@ -95,9 +95,10 @@ npm run dev
 │   │   └── db.ts              # Prisma client singleton
 │   ├── mocks/                 # 상품/항공/원가 mock data
 │   └── types/                 # 공통 도메인 타입
-├── e2e/                       # Playwright 시나리오
-├── docs/                      # PRD, DB schema, Excel spec, MCP mapping
-└── scripts/quality-gate.sh    # 품질 게이트 스크립트
+├── e2e/                       # Playwright 시나리오(팝업·저장·권한·골든 일정 가져오기 등)
+├── tests/fixtures/itinerary-golden/  # 일정 파싱 회귀용 골든 파일
+├── docs/                      # PRD, DB schema, Excel spec, MCP mapping, diagrams/
+└── scripts/quality-gate.sh    # 품질 게이트(typecheck·lint·test + 에디터 TSX 규칙)
 ```
 
 ## Overall Flow
@@ -113,16 +114,16 @@ flowchart TD
   VersionState -- 없음 --> Import[SearchPopup<br/>상품코드 / 파일 / 직접입력]
 
   Import --> Product[상품코드 조회<br/>MCP 또는 mock]
-  Import --> File[파일/텍스트 일정 파싱<br/>xlsx, pdf, hwpx, text]
+  Import --> File[파일/텍스트 일정 파싱<br/>.xlsx·.pdf·.hwpx·text 등]
   File --> Format{지원 형식?}
-  Format -- xls/hwp 등 미지원 --> Convert[변환 안내 422]
+  Format -- .xls·구형 .hwp 등 미지원 --> Convert[변환 안내 422]
   Format -- PDF 텍스트 부족 --> Ocr[페이지 이미지 OCR<br/>OpenAI Vision]
-  Format -- 지원 / 텍스트 충분 --> Parse[AI 후보 + 기본 표 파서 후보 생성]
+  Format -- 지원 / 텍스트 충분 --> Parse[parseItineraryWithDiagnostics<br/>결정적 표·내러티브 후보 + AI]
   Ocr --> Parse
-  Parse --> Pick{품질 기준 비교}
-  Pick -- AI 품질 충분 --> AiResult[AI 결과 사용<br/>원문 식사/호텔 보정]
-  Pick -- 표 구조가 더 안정적 --> TableResult[기본 표 파서 결과 사용]
-  Pick -- AI 실패 또는 품질 부족 --> Fallback[기본 파서 fallback<br/>진단 메시지 표시]
+  Parse --> Pick{후보별 품질·커버리지 비교}
+  Pick -- AI가 충분히 풍부 --> AiResult[AI 채택<br/>표 경계 시 표 항목 병합·식사/숙박 보정]
+  Pick -- 표 결정적 후보가 더 안정적 --> TableResult[fallback-tabular 등]
+  Pick -- AI 실패·불충분 --> Fallback[fallback-ai-error·quality 등<br/>diagnostics]
 
   Product --> Edit[일정표/견적서 편집<br/>isDirty + autosave]
   AiResult --> Edit
@@ -338,7 +339,7 @@ User(PARTNER)
 | `/api/editor/init?quoteNo=...` | GET | 팝업 진입 시 견적과 최신 버전 조회 |
 | `/api/mcp/products/:code` | GET | 상품코드로 MCP 또는 mock 일정 조회 |
 | `/api/flights` | GET | 항공 mock/검색 데이터 조회 |
-| `/api/itinerary/parse` | POST | 일정 파일/텍스트 파싱, PDF OCR fallback, AI/기본 파서 품질 비교 |
+| `/api/itinerary/parse` | POST | 일정 파일/텍스트 파싱(PDF OCR·다중 시트 .xlsx·.hwpx 등), `parseItineraryWithDiagnostics`; `?debug=1`이면 diagnostics에 후보 점수 포함 |
 | `/api/quotes/:id/versions` | GET | 버전 목록 조회 |
 | `/api/quotes/:id/versions` | POST | 새 버전 생성 |
 | `/api/quotes/:id/versions/:version` | GET | 특정 버전 상세 조회 |
@@ -380,7 +381,15 @@ User(PARTNER)
 
 ### AI Itinerary Parsing
 
-`/api/itinerary/parse`는 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` 설정을 사용합니다. PDF는 먼저 `pdf-parse`로 텍스트를 추출하고, 텍스트가 페이지 표식 수준이거나 너무 짧으면 PDF 페이지를 이미지로 렌더링해 OpenAI Vision OCR을 수행한 뒤 기존 일정 파서에 전달합니다. 파싱 결과는 일정표 데이터 구조에 맞게 정규화되어야 합니다.
+`/api/itinerary/parse`는 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` 설정을 사용합니다(키가 없으면 결정적 파싱만으로 `fallback-no-key` 등으로 동작).
+
+- **`.xlsx`**: 시트명·내용 스코어로 일정표 시트를 우선하고, 필요 시 복수 시트(상한 있음)를 텍스트로 합친 뒤 `spreadsheetRowsToText`로 정규화합니다.
+- **`.pdf`**: `pdf-parse`로 텍스트를 먼저 추출하고, 양이 부족하면 페이지를 이미지로 렌더링한 뒤 OpenAI Vision OCR을 수행합니다.
+- **`.hwpx`**: ZIP 내 XML에서 텍스트를 추출합니다(확장자가 `.hwpx`이면 Excel `.xls` 검사와 별개 경로입니다).
+- **미지원**: 구형 **`.xls`**, 구형 **`.hwp`**는 보안·포맷 이유로 422 안내 메시지와 함께 거절합니다.
+- **선택**: `POST ...?debug=1`이면 응답 `diagnostics`에 후보별 점수(`candidateScores`) 등을 포함합니다.
+
+핵심 로직은 `src/lib/itinerary/aiParser.ts`의 `parseItineraryWithDiagnostics`이며, Vitest 골든 회귀는 `tests/fixtures/itinerary-golden/`과 `src/app/api/itinerary/parse/itinerary-golden.test.ts`를 참고하면 됩니다.
 
 ### Excel
 
@@ -426,6 +435,7 @@ Excel 생성은 `src/lib/excel/`에만 위치합니다. 일정표는 `generateIt
 단위 테스트는 도메인 함수 중심입니다.
 
 - 일정 파싱/표시/정렬: `src/lib/itinerary/*.test.ts`
+- 파싱 API·골든 회귀: `src/app/api/itinerary/parse/route.test.ts`, `itinerary-golden.test.ts`(fixture: `tests/fixtures/itinerary-golden/`)
 - 버전 번호: `src/lib/version/*.test.ts`
 - Excel 파일명: `src/lib/excel/*.test.ts`
 - MCP 매핑: `src/lib/mcp/*.test.ts`
@@ -436,9 +446,10 @@ E2E 테스트는 Playwright로 주요 사용자 흐름을 검증합니다.
 - 역할별 권한
 - 버전 생성/읽기 전용
 - 일정 다중 항목
+- 골든 fixture 기반 일정 가져오기(`itinerary-import-golden.spec.ts`)
 - Excel 다운로드
 
-작업 완료 전 기본 품질 게이트는 다음입니다.
+작업 완료 전 기본 품질 게이트는 `npm run quality`(또는 동일 검사를 수동으로 돌릴 때는 아래)입니다.
 
 ```bash
 npm run typecheck
@@ -456,5 +467,7 @@ npm run test
 | `docs/EXCEL_FORMAT_SPEC.md` | Excel 출력 포맷 |
 | `docs/mcp-response-field-mapping.md` | MCP 응답 필드 매핑 |
 | `docs/diagrams/role_flows.puml` | PARTNER, AGENT, SALES 역할별 화면/업무 흐름 |
-| `docs/diagrams/sequence_diagram.puml` | 팝업 초기화, 상품 조회, 저장, Excel 다운로드 시퀀스 |
+| `docs/diagrams/sequence_diagram.puml` | 팝업 초기화, 상품 조회, 일정 파싱, 저장, Excel 다운로드 시퀀스 |
+| `docs/diagrams/data_flow.puml` | 클라이언트·API·파서·DB 간 데이터 흐름 |
+| `docs/diagrams/flowchart.puml` | 사용자 관점 주요 분기 플로우 |
 | `docs/PROGRESS.md` | 구현 진행 기록 |
