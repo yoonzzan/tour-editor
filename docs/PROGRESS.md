@@ -150,6 +150,7 @@
 - [x] **T-807** E2E: Excel 다운로드 + 파일명 (`excel-download.spec.ts`)
 - [x] **T-808** E2E: 역할별 권한 (`role-permissions.spec.ts`)
 - [x] **T-809** 에디터 로딩 성능 목표 설정 (LCP < 2초 — Lighthouse 기준, CI 미측정)
+- [x] **T-810** E2E: 골든 fixture 일정 가져오기 (`itinerary-import-golden.spec.ts`)
 
 ---
 
@@ -162,6 +163,8 @@
 - [x] **T-905** `ScheduleItemForm` 항목구분 칩 — `globals.css` 시맨틱 HSL 토큰 + arbitrary class (blue/green/orange 등 하드코드 제거)
 - [x] **T-906** `DESIGN.md` — 레포 추적 정책(`repository` 블록: 커밋 대상, `presentation/`은 대규모 시 별도 PR 권장)
 - [~] **T-907** `presentation/` — 발표용 Remotion 슬라이드 서브트리; 제품 코드와 분리해 PR하면 리뷰 부담 감소(선택)
+- [x] **T-908** 일정 파싱 품질 회귀 — 골든 fixture(`tests/fixtures/itinerary-golden/`), Vitest `itinerary-golden.test.ts`, `route.test.ts`, AI 파서 보강
+- [x] **T-909** E2E `version-create.spec.ts` 보강(저장→버전 생성 흐름 선택자·응답 동기화)
 
 ---
 
@@ -187,6 +190,7 @@
 | 2026-05-08 | 일정 파서 품질 진단 | AI/표/일반 텍스트 파서 후보별 품질 점수·필드 커버리지·경고 diagnostics 추가, `/api/itinerary/parse?debug=1` 상세 후보 점수 응답 분리, 직접입력 권장 형식·예시 채우기·타입 지정 라인 파싱 보강, 골든 fixture 기준 README 추가. |
 | 2026-05-08 | HanaHub 디자인 1차 적용 | `DESIGN.md` 기준 전역 색상·폰트·타입 스케일·radius 토큰 적용, focus-visible 기본 규칙 추가, `/login` 빌드용 Suspense 경계 보강. |
 | 2026-05-13 | Phase 9·문서 | HanaHub 셸·모달 크롬 정리, 팝업 `shadow-popover` 제거·quality-gate 문자열 검사, `editor.md` 규칙·`DESIGN.md` repository 정책·항목구분 칩 시맨틱 토큰·`AGENTS.md` 학습 1줄 반영. GitNexus `analyze` 시 FTS 확장 다운로드 실패는 비치명적(인덱스는 재구축 가능). |
+| 2026-05-13 | 파서·테스트 | T-810·T-908·T-909: 골든 fixture·Vitest 골든·`POST /api/itinerary/parse`·AI 파서 하드닝, E2E `itinerary-import-golden.spec.ts` 추가(Playwright 스펙 총 7개), `version-create` 스펙 보강. `npm run quality` 통과. |
 
 ## 알려진 이슈
 없음
