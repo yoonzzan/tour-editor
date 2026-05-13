@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getApiToken } from "@/lib/auth";
 import { config } from "@/lib/config";
-import { parseItineraryWithDiagnostics } from "@/lib/itinerary/aiParser";
+import { parseItineraryWithDiagnostics, type ItineraryParseResult } from "@/lib/itinerary/aiParser";
 import { spreadsheetRowsToText } from "@/lib/itinerary/spreadsheetText";
 
 export const runtime = "nodejs";
@@ -14,6 +14,7 @@ const UNSUPPORTED_HWP_MESSAGE = "구형 한글(.hwp)은 아직 지원하지 않�
 const PDF_OCR_MAX_PAGES = 6;
 const PDF_OCR_IMAGE_WIDTH = 1600;
 const PDF_TEXT_MIN_CHARS = 80;
+const MAX_SPREADSHEET_SHEETS = 8;
 
 type OcrMessageContent =
   | { type: "text"; text: string }
@@ -49,14 +50,15 @@ function excelResultValue(value: ExcelJS.CellValue): unknown {
 }
 
 function excelCellDisplayValue(cell: ExcelJS.Cell): unknown {
-  const value = excelResultValue(cell.value);
+  const sourceCell = cell.isMerged && cell.col === cell.master.col ? cell.master : cell;
+  const value = excelResultValue(sourceCell.value);
   if (value === null || value === undefined) return "";
   if (value instanceof Date) {
     if (value.getFullYear() <= 1901) {
       if (value.getSeconds() !== 0 || value.getMilliseconds() !== 0) {
         return normalizeExcelTimeDate(value);
       }
-      const text = cell.text;
+      const text = sourceCell.text;
       const timeText = /\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/u.exec(text);
       if (timeText?.[1] && timeText[2]) {
         return `${timeText[1].padStart(2, "0")}:${timeText[2]}`;
@@ -65,17 +67,68 @@ function excelCellDisplayValue(cell: ExcelJS.Cell): unknown {
     }
     return normalizeExcelDate(value);
   }
-  const text = cell.text;
+  const text = sourceCell.text;
   return text || value;
 }
 
-async function spreadsheetToText(file: File): Promise<string> {
-  const workbook = new ExcelJS.Workbook();
-  const arrayBuffer = await file.arrayBuffer();
-  await workbook.xlsx.load(arrayBuffer);
-  const worksheet = workbook.worksheets[0];
-  if (!worksheet) return "";
+function scoreWorksheet(worksheet: ExcelJS.Worksheet): number {
+  let score = 0;
+  const sheetName = worksheet.name.replace(/\s+/gu, "");
+  if (/(일정표|상세일정|일정|세부내역|세부)/u.test(sheetName)) score += 80;
+  if (/(견적|확정|인보이스)/u.test(sheetName)) score += 25;
+  if (/(호텔|식사|가이드|차량)/u.test(sheetName)) score += 15;
+  if (/(상품리스트|서차지|수배부용|샘플|sample|예시)/iu.test(sheetName)) score -= 100;
 
+  const sampleLines: string[] = [];
+  const rowLimit = Math.min(worksheet.rowCount, 120);
+  const columnLimit = Math.min(worksheet.columnCount, 32);
+  for (let rowNumber = 1; rowNumber <= rowLimit; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const values: string[] = [];
+    for (let column = 1; column <= columnLimit; column += 1) {
+      const value = excelCellDisplayValue(row.getCell(column));
+      values.push(typeof value === "string" ? value : String(value));
+    }
+    const line = values.filter(Boolean).join(" ");
+    if (line) sampleLines.push(line);
+  }
+
+  const sample = sampleLines.join("\n");
+  const dayMatches = sample.match(/(?:제\s*)?\d{1,2}\s*일차?|DAY\s*\d{1,2}/giu)?.length ?? 0;
+  const mealMatches = sample.match(/(?:조식|중식|석식|조[:：]|중[:：]|석[:：]|\b[BLD]\s*[:：])/giu)?.length ?? 0;
+  const hotelMatches = sample.match(/(?:HOTEL|호텔|숙소|숙박|리조트)/giu)?.length ?? 0;
+  const headerMatches = sample.match(/(?:일자|날짜|지역|교통편|시간|세부\s*일정|ITINERARY|MEALS?)/giu)?.length ?? 0;
+  score += Math.min(60, dayMatches * 12);
+  score += Math.min(30, mealMatches * 4);
+  score += Math.min(25, hotelMatches * 4);
+  score += Math.min(30, headerMatches * 5);
+  return score;
+}
+
+function isPrimaryScheduleWorksheetName(name: string): boolean {
+  const sheetName = name.replace(/\s+/gu, "");
+  if (/(샘플|sample|예시)/iu.test(sheetName)) return false;
+  return /(일정표|상세일정|세부일정)/u.test(sheetName);
+}
+
+function selectWorksheets(workbook: ExcelJS.Workbook): ExcelJS.Worksheet[] {
+  const scored = workbook.worksheets
+    .map((worksheet, index) => ({ worksheet, index, score: scoreWorksheet(worksheet) }))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const primaryScheduleSheets = scored
+    .filter((entry) => entry.score > 0 && isPrimaryScheduleWorksheetName(entry.worksheet.name))
+    .slice(0, MAX_SPREADSHEET_SHEETS)
+    .map((entry) => entry.worksheet);
+  if (primaryScheduleSheets.length > 0) return primaryScheduleSheets;
+
+  const selected = scored
+    .filter((entry) => entry.score > 0)
+    .slice(0, MAX_SPREADSHEET_SHEETS)
+    .map((entry) => entry.worksheet);
+  return selected.length > 0 ? selected : workbook.worksheets.slice(0, 1);
+}
+
+function worksheetToText(worksheet: ExcelJS.Worksheet): string {
   const rows: unknown[][] = [];
   const columnCount = worksheet.columnCount;
   worksheet.eachRow({ includeEmpty: true }, (row) => {
@@ -87,6 +140,17 @@ async function spreadsheetToText(file: File): Promise<string> {
   });
 
   return spreadsheetRowsToText(rows);
+}
+
+async function spreadsheetToText(file: File): Promise<string> {
+  const workbook = new ExcelJS.Workbook();
+  const arrayBuffer = await file.arrayBuffer();
+  await workbook.xlsx.load(arrayBuffer);
+  const worksheets = selectWorksheets(workbook);
+  return worksheets
+    .map((worksheet) => [`[sheet:${worksheet.name}]`, worksheetToText(worksheet)].filter(Boolean).join("\n"))
+    .filter((text) => text.trim().length > 0)
+    .join("\n\n");
 }
 
 function stripPdfPageMarkers(text: string): string {
@@ -266,6 +330,25 @@ async function extractRawText(formData: FormData): Promise<{ rawText: string; ti
   return { rawText, title: title ?? fileTitle };
 }
 
+function isDebugRequest(req: NextRequest): boolean {
+  const requestWithUrl = req as NextRequest & {
+    nextUrl?: {
+      searchParams?: URLSearchParams;
+    };
+  };
+  return requestWithUrl.nextUrl?.searchParams?.get("debug") === "1";
+}
+
+function toPublicParseResult(result: ItineraryParseResult, includeDebug: boolean): ItineraryParseResult {
+  if (includeDebug) return result;
+  const diagnostics = { ...result.diagnostics };
+  delete diagnostics.candidateScores;
+  return {
+    itinerary: result.itinerary,
+    diagnostics,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const token = await getApiToken(req);
   if (!token?.sub) {
@@ -276,9 +359,11 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const { rawText, title } = await extractRawText(formData);
     const result = await parseItineraryWithDiagnostics({ rawText, title });
-    return NextResponse.json(result, {
+    const publicResult = toPublicParseResult(result, isDebugRequest(req));
+    return NextResponse.json(publicResult, {
       headers: {
         "x-itinerary-parser-source": result.diagnostics.source,
+        "x-itinerary-parser-score": String(result.diagnostics.qualityScore ?? ""),
       },
     });
   } catch (error) {

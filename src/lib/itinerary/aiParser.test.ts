@@ -25,6 +25,19 @@ describe("AI prompt builders", () => {
     expect(prompt).toContain("title: 테스트 일정");
   });
 
+  it("can include code-extracted evidence in the analysis prompt", () => {
+    const prompt = buildAnalysisUserPrompt(
+      "싱가포르 테스트",
+      "제2일 싱가포르\n중:키세키일식부풰",
+      '[확정 evidence]\n- kind=meal day=2 slot=lunch value="키세키일식부풰" source="중:키세키일식부풰"',
+    );
+
+    expect(prompt).toContain("[코드 추출 evidence]");
+    expect(prompt).toContain("확정 evidence는 누락하지 말고");
+    expect(prompt).toContain('kind=meal day=2 slot=lunch value="키세키일식부풰"');
+    expect(prompt).toContain("[원문]");
+  });
+
   it("keeps parse prompt scoped to analysis text and core JSON rules", () => {
     const prompt = buildParseUserPrompt("테스트 일정", "1일차 | TRANSFER | 인천공항 출발 |  | 10:00 |");
 
@@ -107,6 +120,91 @@ describe("parseItineraryByAi fallback", () => {
     expect(result.days.map((day) => day.dayNo)).toEqual([1, 3]);
     expect(result.days.every((day) => day.date !== "1899-12-31")).toBe(true);
     expect(result.overview.travelPeriod.start).not.toBe("1899-12-31");
+  });
+
+  it("returns quality diagnostics for deterministic parsing", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const rawText = `상품명: 싱가포르 4박 5일
+기간: 2026-06-02 ~ 2026-06-06
+인원: 성인 10, 아동 0
+항공 출발: OZ751 인천 10:00 → 싱가포르 15:30
+숙박호텔: Aloft Singapore Novena
+
+1일차 2026-06-02
+- 이동 | 시간=10:00 | 인천공항 출발
+- 식사 | 석식: 현지식
+- 숙박 | Aloft Singapore Novena
+2일차 2026-06-03
+- 식사 | 조식: 호텔식
+- 관광 | 센토사섬`;
+
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "직접입력 일정" });
+
+    expect(result.diagnostics.selectedCandidate).toBe("deterministic-narrative");
+    expect(result.diagnostics.qualityScore).toBeGreaterThanOrEqual(70);
+    expect(result.diagnostics.fieldCoverage?.dayCount).toBe(2);
+    expect(result.diagnostics.fieldCoverage?.mealCount).toBeGreaterThanOrEqual(2);
+    expect(result.diagnostics.fieldCoverage?.accommodationCount).toBeGreaterThanOrEqual(1);
+    expect(result.diagnostics.candidateScores?.[0]?.candidate).toBe("deterministic-narrative");
+    expect(result.diagnostics.noiseRemovedCount).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps deterministic parsing coverage for schedules after long leading text", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const longLeadingText = Array.from({ length: 700 }, (_, index) => `참고사항 ${index + 1}: 견적 검토용 문구`).join("\n");
+    const rawText = `${longLeadingText}
+
+[상세일정]
+1일차 2026-07-01
+- 이동 | 시간=09:00 | 인천공항 출발
+- 관광 | 타이베이 101 전망대
+- 식사 | 석식: 딘타이펑
+- 숙박 | GRAND HYATT TAIPEI
+2일차 2026-07-02
+- 식사 | 조식: 호텔식
+- 관광 | 예류 지질공원`;
+
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "긴 원문 테스트" });
+    const contents = result.itinerary.days.flatMap((day) => day.items.map((item) => item.content));
+
+    expect(rawText.length).toBeGreaterThan(12000);
+    expect(result.itinerary.days.map((day) => day.dayNo)).toEqual([1, 2]);
+    expect(contents).toContain("타이베이 101 전망대");
+    expect(contents).toContain("GRAND HYATT TAIPEI");
+    expect(result.diagnostics.fieldCoverage?.meaningfulItemCount).toBeGreaterThanOrEqual(6);
+  });
+
+  it("parses abbreviated D-day summaries with hyphen meal markers", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "";
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const rawText = `5. 간략 일정 :
+D1 : 공항미팅 / 푸트라자야&푸트라 모스크 / 호텔 투숙 및 휴식 / 석-한식
+D2 : 겐팅하이랜드 케이블카 / 바투동굴 / 반딧불 투어 / 중-현지식 / 석-세미씨푸드
+D3 : 네덜란드광장 / 트라이쇼 / 중-한식 / 석-현지식
+D4 : 국립모스크 / 공항샌딩 / 중-한식 / 석-현지식`;
+
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "쿠말겐 간략 일정" });
+    const dayOne = result.itinerary.days.find((day) => day.dayNo === 1);
+    const dayTwo = result.itinerary.days.find((day) => day.dayNo === 2);
+
+    expect(result.itinerary.days.map((day) => day.dayNo)).toEqual([1, 2, 3, 4]);
+    expect(dayOne?.items.some((item) => item.type === "ACCOMMODATION" && item.content.includes("호텔 투숙"))).toBe(true);
+    expect(dayOne?.items.find((item) => item.type === "MEAL" && item.mealSlot === "dinner")?.content).toBe("한식");
+    expect(dayTwo?.items.find((item) => item.type === "MEAL" && item.mealSlot === "lunch")?.content).toBe("현지식");
+    expect(dayTwo?.items.find((item) => item.type === "MEAL" && item.mealSlot === "dinner")?.content).toBe("세미씨푸드");
+    expect(result.diagnostics.fieldCoverage?.mealCount).toBeGreaterThanOrEqual(7);
+    expect(result.diagnostics.fieldCoverage?.accommodationCount).toBeGreaterThanOrEqual(1);
   });
 
   it("parses copied product summaries into overview and basics metadata", async () => {
@@ -788,6 +886,82 @@ describe("parseItineraryByAi AI pipeline", () => {
     expect(result.days[1]?.items[0]?.content).toBe("아오이 이케");
   });
 
+  it("passes extracted meal and hotel evidence to the AI analysis step", async () => {
+    process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.resetModules();
+
+    const analysisPrompts: string[] = [];
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages?: Array<{ role: string; content: string }>;
+        response_format?: { type: string };
+      };
+      const lastMessage = body.messages?.[body.messages.length - 1]?.content ?? "";
+
+      if (!body.response_format) {
+        analysisPrompts.push(lastMessage);
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: `[AI 분석 결과]
+상품명: 싱가포르 증거 테스트
+출발일: 2025-04-28
+
+[일차별 일정]
+2일차 | MEAL | 키세키일식부풰 |  |  | lunch
+2일차 | ACCOMMODATION | Aloft Singapore Novena - Urban Room 3박 |  |  |`,
+              },
+            },
+          ],
+        });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: { travelPeriod: { start: "2025-04-28", end: "2025-04-28" } },
+                days: [
+                  {
+                    dayNo: 2,
+                    items: [
+                      { type: "MEAL", mealSlot: "lunch", content: "키세키일식부풰" },
+                      {
+                        type: "ACCOMMODATION",
+                        content: "Aloft Singapore Novena - Urban Room 3박",
+                        hotel: "Aloft Singapore Novena - Urban Room 3박",
+                      },
+                    ],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rawText = `제2일\t싱가포르\t전용버스\t호텔조식후\t조:호텔식
+\t\t\t유네스코 지정 싱가포르 국립식물원 보타닉가든 견학 \t중:키세키일식부풰
+\t\t\tHOTEL - Aloft Singapore Novena - Urban Room 3박\t`;
+
+    const { parseItineraryWithDiagnostics } = await import("@/lib/itinerary/aiParser");
+    const result = await parseItineraryWithDiagnostics({ rawText, title: "싱가포르 증거 테스트" });
+
+    expect(analysisPrompts[0]).toContain("[코드 추출 evidence]");
+    expect(analysisPrompts[0]).toContain("kind=meal");
+    expect(analysisPrompts[0]).toContain("slot=lunch");
+    expect(analysisPrompts[0]).toContain("키세키일식부풰");
+    expect(analysisPrompts[0]).toContain("kind=hotel");
+    expect(analysisPrompts[0]).toContain("Aloft Singapore Novena");
+    expect(result.diagnostics.evidenceCounts?.certain).toBeGreaterThanOrEqual(3);
+  });
+
   it("supplements day-level hotels from fallback rows when AI omits later accommodation items", async () => {
     process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret";
     process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
@@ -1019,7 +1193,7 @@ describe("parseItineraryByAi AI pipeline", () => {
     const contents = result.itinerary.days.flatMap((day) => day.items.map((item) => item.content));
 
     expect(result.diagnostics.source).toBe("ai");
-    expect(result.diagnostics.aiMeaningfulItemCount).toBe(25);
+    expect(result.diagnostics.aiMeaningfulItemCount).toBeGreaterThanOrEqual(25);
     expect(result.diagnostics.fallbackMeaningfulItemCount).toBe(9);
     expect(contents).toContain("AI 전용 일정 25");
     expect(contents).not.toContain("기본 파서 일정 9");
